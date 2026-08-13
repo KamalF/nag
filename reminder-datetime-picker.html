@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Date &amp; time picker — calendar + wheels</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: #63696b; font: 15px/1.55 system-ui, -apple-system, sans-serif; }
+
+/* PREVIEW ONLY: scoped to [data-theme] so the toggle above can show both palettes.
+   The app ships these on :root with a prefers-color-scheme override. See SPEC §9.1. */
+[data-theme="dark"] {
+  --surface: #212a2e; --surface-lift: #263034; --sheet: #1c2428; --field: #1a2226;
+  --ink: #e4e9ea; --ink-quiet: #8da0a7; --ink-faint: #5d7078; --edge: #334147;
+  --late: #e0a33e; --late-ink: #212a2e; --chip: #2c383d; --chip-ink: #c2ced2;
+  --scrim: rgba(8,12,14,.62);
+}
+[data-theme="light"] {
+  --surface: #eff1f0; --surface-lift: #f7f8f8; --sheet: #ffffff; --field: #ffffff;
+  --ink: #1e282c; --ink-quiet: #5c6c72; --ink-faint: #97a3a7; --edge: #d3dad9;
+  --late: #96620f; --late-ink: #ffffff; --chip: #e2e6e5; --chip-ink: #3c4a4e;
+  --scrim: rgba(30,40,44,.42);
+}
+
+.wrap {
+  --body: "Optima", Candara, "Gill Sans", "Gill Sans MT", sans-serif;
+  --time: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+  --item: 44px;
+  max-width: 460px; margin: 0 auto; min-height: 100vh; padding: 20px 14px 40px;
+  background: var(--surface); color: var(--ink); font-family: var(--body);
+}
+h1 { font-size: 19px; font-weight: 600; margin: 0 0 6px; }
+.lede { color: var(--ink-quiet); font-size: 13.5px; margin: 0 0 18px; }
+
+button, input { -webkit-tap-highlight-color: transparent; }
+button { font: inherit; cursor: pointer; border: 0; background: transparent; color: inherit; }
+button:focus { outline: none; }
+button:focus-visible { outline: 2px solid var(--late); outline-offset: 2px; }
+
+.bar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.bar span.lbl { font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-quiet); align-self: center; margin-right: 4px; }
+.bar button {
+  font-size: 12.5px; padding: 8px 12px; border-radius: 999px;
+  background: var(--chip); color: var(--chip-ink);
+}
+.bar button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+
+.chip {
+  padding: 11px 15px; border-radius: 999px; font-size: 13.5px;
+  background: var(--chip); color: var(--chip-ink); transition: transform .09s ease;
+}
+.chip:active { transform: scale(.96); }
+
+/* ---------------- sheet ---------------- */
+.scrim { position: fixed; inset: 0; background: var(--scrim); opacity: 0; pointer-events: none; transition: opacity .22s ease; z-index: 40; }
+.scrim.open { opacity: 1; pointer-events: auto; }
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+  max-width: 460px; margin: 0 auto; max-height: 94vh; overflow-y: auto;
+  background: var(--sheet); color: var(--ink);
+  border-radius: 20px 20px 0 0; border-top: 1px solid var(--edge);
+  padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
+  transform: translateY(102%); transition: transform .26s cubic-bezier(.32,.72,0,1);
+  box-shadow: 0 -18px 44px rgba(0,0,0,.32);
+}
+.sheet.open { transform: translateY(0); }
+@media (prefers-reduced-motion: reduce) { .sheet, .scrim { transition: none; } }
+.grab { width: 38px; height: 4px; border-radius: 2px; background: var(--edge); margin: 2px auto 12px; }
+.summary { font: italic 400 19px/1.25 var(--time); margin: 0 0 2px; }
+.summary b { font-style: normal; font-weight: 600; }
+.relative { font-size: 12.5px; color: var(--late); margin: 0 0 14px; }
+
+/* ---------------- calendar ---------------- */
+.calhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.calhead .month { font-size: 15px; font-weight: 600; letter-spacing: .01em; }
+.calhead button { width: 38px; height: 38px; border-radius: 999px; color: var(--ink-quiet); font-size: 17px; line-height: 1; }
+.calhead button:active { background: var(--chip); }
+.dow { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 4px; }
+.dow span { text-align: center; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-faint); }
+.grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.grid .cell { aspect-ratio: 1 / 1; }
+.grid button {
+  width: 100%; height: 100%; border-radius: 10px; font-size: 14.5px;
+  color: var(--ink); font-variant-numeric: tabular-nums;
+  transition: transform .08s ease;
+}
+.grid button:active { transform: scale(.92); }
+.grid button.past { color: var(--ink-faint); }
+.grid button.today { box-shadow: inset 0 0 0 1px var(--edge); }
+.grid button[aria-pressed="true"] { background: var(--late); color: var(--late-ink); font-weight: 700; box-shadow: none; }
+
+/* ---------------- wheels ---------------- */
+.tlabel { font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-quiet); margin: 18px 0 6px; font-weight: 600; }
+.wheels {
+  position: relative; display: flex; align-items: stretch; justify-content: center; gap: 4px;
+  height: calc(var(--item) * 3);
+}
+.band {
+  position: absolute; left: 0; right: 0; top: var(--item); height: var(--item);
+  border-radius: 12px; background: var(--chip); pointer-events: none;
+}
+.wheel {
+  flex: 0 1 108px; overflow-y: auto; scroll-snap-type: y mandatory;
+  padding: var(--item) 0; scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(transparent, #000 26%, #000 74%, transparent);
+  mask-image: linear-gradient(transparent, #000 26%, #000 74%, transparent);
+}
+.wheel::-webkit-scrollbar { display: none; }
+.wheel button {
+  display: block; width: 100%; height: var(--item); scroll-snap-align: center;
+  font: 400 20px/var(--item) var(--time); color: var(--ink-faint);
+  font-variant-numeric: tabular-nums; transition: color .12s ease, transform .12s ease;
+}
+.wheel button.sel { color: var(--ink); font-weight: 600; transform: scale(1.06); }
+.colon { align-self: center; font: 600 20px/1 var(--time); color: var(--ink-quiet); padding: 0 2px; }
+
+.actions { display: flex; gap: 10px; margin-top: 18px; }
+.actions button { flex: 1; padding: 14px; border-radius: 12px; font-size: 15px; }
+.btn-ghost { background: transparent; border: 1px solid var(--edge); color: var(--ink-quiet); }
+.btn-set { background: var(--ink); color: var(--surface); font-weight: 600; }
+.actions button:active { transform: scale(.985); }
+
+.notes { margin-top: 26px; font-size: 13px; color: var(--ink-quiet); }
+.notes li { margin-bottom: 6px; }
+.notes code, pre { font-family: ui-monospace, Menlo, monospace; }
+.notes code { font-size: 12px; background: var(--chip); padding: 1px 5px; border-radius: 3px; }
+pre { background: var(--surface-lift); border: 1px solid var(--edge); border-radius: 10px; padding: 12px 14px; font-size: 12px; overflow-x: auto; color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="wrap" data-theme="dark" id="wrap">
+
+  <div class="bar" role="group" aria-label="Theme">
+    <span class="lbl">Theme</span>
+    <button type="button" data-t="dark" aria-pressed="true">Dark</button>
+    <button type="button" data-t="light" aria-pressed="false">Light</button>
+  </div>
+
+  <div class="bar" role="group" aria-label="Hour range">
+    <span class="lbl">Hours</span>
+    <button type="button" data-range="8-18" aria-pressed="true">08–18</button>
+    <button type="button" data-range="6-23" aria-pressed="false">06–23</button>
+    <button type="button" data-range="0-23" aria-pressed="false">00–23</button>
+  </div>
+
+  <h1>Calendar + wheels</h1>
+  <p class="lede">Month grid for the date, snap-scrolling wheels for the time. Hours obey the configured range, minutes are quarters only, and it opens on 9:00. Change the range above to see the wheel rebuild.</p>
+  <button class="chip" id="reopen">Open the picker</button>
+
+  <ul class="notes">
+    <li>The wheels are real scroll containers with <code>scroll-snap-type: y mandatory</code> — thumb-flickable, and each value is also a button so it works by tap and by keyboard.</li>
+    <li>Selection is read from scroll position, so there's no drag maths to get wrong and no library.</li>
+    <li>Past days stay tappable, just dimmed — backdating is occasionally what you want. It lands in "Needs you now" and does not notify: anything over 15 minutes late is marked and skipped (SPEC §7.3), so the summary line says exactly that rather than promising a ping.</li>
+    <li>The hour wheel can't leave the configured range, so there is no "outside your usual hours" hint to show.</li>
+    <li><strong>Both toggles at the top are preview chrome</strong> — the app has no theme switcher (it follows <code>prefers-color-scheme</code>, tokens on <code>:root</code>) and no way to widen the hour range from the sheet. They exist here so one page can show every palette and every configured range.</li>
+    <li>The chosen wall-clock time is read in the browser's timezone and sent as an absolute instant; the server stores UTC and resolves <em>presets</em> in its own zone (SPEC §6).</li>
+    <li>Config this maps onto:</li>
+  </ul>
+  <pre>[picker]
+hour_min     = 8
+hour_max     = 18
+minute_step  = 15        # 00 / 15 / 30 / 45
+default_time = "09:00"
+week_start   = "monday"</pre>
+
+  <div class="scrim" id="scrim"></div>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="Pick a date and time">
+    <div class="grab"></div>
+    <p class="summary" id="summary">—</p>
+    <p class="relative" id="relative">—</p>
+
+    <div class="calhead">
+      <button type="button" id="prev" aria-label="Previous month">‹</button>
+      <span class="month" id="month">—</span>
+      <button type="button" id="next" aria-label="Next month">›</button>
+    </div>
+    <div class="dow" id="dow"></div>
+    <div class="grid" id="grid"></div>
+
+    <p class="tlabel">Time</p>
+    <div class="wheels">
+      <div class="band"></div>
+      <div class="wheel" id="hours" role="listbox" aria-label="Hour"></div>
+      <span class="colon">:</span>
+      <div class="wheel" id="mins" role="listbox" aria-label="Minute"></div>
+    </div>
+
+    <div class="actions">
+      <button class="btn-ghost" id="cancel">Cancel</button>
+      <button class="btn-set" id="set">Set reminder</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const CONFIG = { hourMin: 8, hourMax: 18, minuteStep: 15, defaultTime: '09:00', weekStart: 1 };
+const ITEM = 44;
+const pad2 = n => String(n).padStart(2, '0');
+const startOfDay = d => { const x = new Date(d); x.setHours(0,0,0,0); return x; };
+
+const today = startOfDay(new Date());
+let selected = new Date(today);
+let view = new Date(today.getFullYear(), today.getMonth(), 1);
+let hour = Number(CONFIG.defaultTime.split(':')[0]);
+let minute = Number(CONFIG.defaultTime.split(':')[1]);
+
+/* ---- theme + range controls ---- */
+const wrap = document.getElementById('wrap');
+document.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => {
+  wrap.dataset.theme = b.dataset.t;
+  document.querySelectorAll('[data-t]').forEach(o => o.setAttribute('aria-pressed', String(o === b)));
+}));
+document.querySelectorAll('[data-range]').forEach(b => b.addEventListener('click', () => {
+  const [a, z] = b.dataset.range.split('-').map(Number);
+  CONFIG.hourMin = a; CONFIG.hourMax = z;
+  document.querySelectorAll('[data-range]').forEach(o => o.setAttribute('aria-pressed', String(o === b)));
+  hour = Math.min(Math.max(hour, a), z);
+  buildWheels(); render();
+}));
+
+/* ---- calendar ---- */
+const dowEl = document.getElementById('dow');
+const names = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+for (let i = 0; i < 7; i++) {
+  const s = document.createElement('span');
+  s.textContent = names[(CONFIG.weekStart + i) % 7];
+  dowEl.appendChild(s);
+}
+
+function buildCalendar() {
+  const grid = document.getElementById('grid');
+  grid.replaceChildren();
+  document.getElementById('month').textContent =
+    view.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+
+  const first = new Date(view.getFullYear(), view.getMonth(), 1);
+  const lead = (first.getDay() - CONFIG.weekStart + 7) % 7;
+  const days = new Date(view.getFullYear(), view.getMonth() + 1, 0).getDate();
+
+  for (let i = 0; i < lead; i++) grid.appendChild(Object.assign(document.createElement('div'), { className: 'cell' }));
+
+  for (let d = 1; d <= days; d++) {
+    const cell = document.createElement('div'); cell.className = 'cell';
+    const date = new Date(view.getFullYear(), view.getMonth(), d);
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = d;
+    if (date < today) b.classList.add('past');
+    if (+date === +today) b.classList.add('today');
+    b.setAttribute('aria-pressed', String(+date === +selected));
+    b.addEventListener('click', () => { selected = date; buildCalendar(); render(); });
+    cell.appendChild(b); grid.appendChild(cell);
+  }
+}
+document.getElementById('prev').addEventListener('click', () => { view.setMonth(view.getMonth() - 1); buildCalendar(); });
+document.getElementById('next').addEventListener('click', () => { view.setMonth(view.getMonth() + 1); buildCalendar(); });
+
+/* ---- wheels ---- */
+function buildWheel(el, values, current, onPick) {
+  el.replaceChildren();
+  values.forEach((v, i) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = pad2(v); b.dataset.v = v;
+    b.addEventListener('click', () => el.scrollTo({ top: i * ITEM, behavior: 'smooth' }));
+    el.appendChild(b);
+  });
+  const idx = Math.max(0, values.indexOf(current));
+  el.scrollTop = idx * ITEM;
+  mark(el, idx);
+
+  let t;
+  const settle = () => {
+    const i = Math.min(values.length - 1, Math.max(0, Math.round(el.scrollTop / ITEM)));
+    mark(el, i); onPick(values[i]);
+  };
+  el.addEventListener('scroll', () => {
+    mark(el, Math.round(el.scrollTop / ITEM));
+    clearTimeout(t); t = setTimeout(settle, 90);
+  }, { passive: true });
+}
+function mark(el, idx) {
+  [...el.children].forEach((c, i) => c.classList.toggle('sel', i === idx));
+}
+function buildWheels() {
+  const hrs = []; for (let h = CONFIG.hourMin; h <= CONFIG.hourMax; h++) hrs.push(h);
+  const mins = []; for (let m = 0; m < 60; m += CONFIG.minuteStep) mins.push(m);
+  buildWheel(document.getElementById('hours'), hrs, hour, v => { hour = v; render(); });
+  buildWheel(document.getElementById('mins'), mins, minute, v => { minute = v; render(); });
+}
+
+/* ---- summary ---- */
+function render() {
+  const when = new Date(selected); when.setHours(hour, minute, 0, 0);
+  // built as nodes, not innerHTML — the app bans innerHTML outright (SPEC §9.7)
+  const time = document.createElement('b');
+  time.textContent = pad2(hour) + ':' + pad2(minute);
+  const summary = document.getElementById('summary');
+  summary.replaceChildren(
+    document.createTextNode(
+      when.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }) + ' at '),
+    time);
+  const mins = Math.round((when - new Date()) / 60000);
+  document.getElementById('relative').textContent =
+    mins < 0 ? "in the past — it'll be waiting in Needs you now, with no notification"
+    : mins < 60 ? 'in ' + mins + ' minutes'
+    : mins < 1440 ? 'in ' + Math.round(mins / 60) + ' hours'
+    : 'in ' + Math.round(mins / 1440) + ' days';
+}
+
+/* ---- open / close ---- */
+const sheet = document.getElementById('sheet'), scrim = document.getElementById('scrim');
+const open = () => {
+  selected = new Date(today); view = new Date(today.getFullYear(), today.getMonth(), 1);
+  hour = Math.min(Math.max(Number(CONFIG.defaultTime.split(':')[0]), CONFIG.hourMin), CONFIG.hourMax);
+  minute = Number(CONFIG.defaultTime.split(':')[1]);
+  buildCalendar(); buildWheels(); render();
+  sheet.classList.add('open'); scrim.classList.add('open');
+};
+const close = () => { sheet.classList.remove('open'); scrim.classList.remove('open'); };
+document.getElementById('reopen').addEventListener('click', open);
+document.getElementById('cancel').addEventListener('click', close);
+document.getElementById('set').addEventListener('click', close);
+scrim.addEventListener('click', close);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+
+buildCalendar(); buildWheels(); render();
+setTimeout(open, 260);
+</script>
+</body>
+</html>

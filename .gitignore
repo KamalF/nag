@@ -1,0 +1,5 @@
+nag.env
+/data/
+/config/
+*.db*
+.claude/
