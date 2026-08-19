@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/KamalF/nag/internal/config"
 	"github.com/KamalF/nag/internal/store"
@@ -31,10 +33,24 @@ type Server struct {
 	cfg   *config.Config
 	web   fs.FS
 	log   *slog.Logger
+
+	token     string
+	cookieKey []byte
+
+	loginMu    sync.Mutex
+	loginSleep time.Duration
 }
 
-func New(st *store.Store, cfg *config.Config, web fs.FS, log *slog.Logger) *Server {
-	return &Server{store: st, cfg: cfg, web: web, log: log}
+func New(st *store.Store, cfg *config.Config, web fs.FS, token string, log *slog.Logger) *Server {
+	return &Server{
+		store:      st,
+		cfg:        cfg,
+		web:        web,
+		log:        log,
+		token:      token,
+		cookieKey:  cookieKey(token),
+		loginSleep: 250 * time.Millisecond,
+	}
 }
 
 // Handler assembles the mux. `GET /` (the embedded frontend) is
@@ -49,7 +65,13 @@ func (s *Server) Handler() http.Handler {
 	// wins), and FileServer already answers non-GET methods with 405.
 	mux.Handle("/", http.FileServerFS(s.web))
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
-	mux.HandleFunc("/api/", s.handleAPINotFound)
+	mux.HandleFunc("POST /login", s.handleLogin)
+	mux.HandleFunc("POST /logout", s.handleLogout)
+
+	api := http.NewServeMux()
+	api.HandleFunc("/api/", s.handleAPINotFound)
+	mux.Handle("/api/", s.requireAuth(api))
+
 	return s.logRequests(capBody(mux))
 }
 

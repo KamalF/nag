@@ -45,7 +45,7 @@ func runServe(stderr io.Writer) int {
 	logger.Info("timezone", "tz", cfg.General.Timezone)
 	logger.Info("presets", "count", len(cfg.Presets))
 
-	api := httpapi.New(st, cfg, web.Files, logger)
+	api := httpapi.New(st, cfg, web.Files, env.token, logger)
 	server := &http.Server{
 		Addr:              env.addr,
 		Handler:           api.Handler(),

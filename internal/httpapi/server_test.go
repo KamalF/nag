@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/KamalF/nag/internal/config"
 	"github.com/KamalF/nag/internal/store"
@@ -29,13 +30,25 @@ func testServer(t *testing.T, logs io.Writer) *Server {
 		"index.html": &fstest.MapFile{Data: []byte("<h1>test index</h1>")},
 	}
 	cfg := &config.Config{}
-	return New(st, cfg, web, slog.New(slog.NewTextHandler(logs, nil)))
+	s := New(st, cfg, web, testToken, slog.New(slog.NewTextHandler(logs, nil)))
+	s.loginSleep = time.Millisecond // keep the §8.1 failure sleep out of test time
+	return s
 }
 
 func get(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	return rec
+}
+
+// authed sends a request through h with the bearer token attached.
+func authed(t *testing.T, h http.Handler, method, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, path, nil)
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
 	return rec
 }
 
@@ -70,7 +83,7 @@ func TestAPICatchAll(t *testing.T) {
 	h := testServer(t, nil).Handler()
 
 	t.Run("misspelled endpoint is a JSON 404, not index.html", func(t *testing.T) {
-		rec := get(t, h, "/api/typo")
+		rec := authed(t, h, http.MethodGet, "/api/typo")
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("GET /api/typo = %d, want 404", rec.Code)
 		}
@@ -78,8 +91,7 @@ func TestAPICatchAll(t *testing.T) {
 	})
 
 	t.Run("wrong method on a real path is 404, never 405", func(t *testing.T) {
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/config", nil))
+		rec := authed(t, h, http.MethodPost, "/api/config")
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("POST /api/config = %d, want the documented 404", rec.Code)
 		}
@@ -99,7 +111,7 @@ func TestRequestLogging(t *testing.T) {
 		t.Errorf("successful GET was logged: %q", logs.String())
 	}
 
-	get(t, h, "/api/typo")
+	authed(t, h, http.MethodGet, "/api/typo")
 	line := logs.String()
 	if !strings.Contains(line, "status=404") || !strings.Contains(line, "/api/typo") {
 		t.Errorf("4xx line missing or incomplete: %q", line)
