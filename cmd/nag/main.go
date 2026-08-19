@@ -61,21 +61,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 }
 
-// configPath resolves NAG_CONFIG with its §5.1 default. (The full env
-// table and per-subcommand requirements land with the boot-checks commit.)
-func configPath() string {
-	if p := os.Getenv("NAG_CONFIG"); p != "" {
-		return p
-	}
-	return "/config/nag.toml"
-}
-
 // runConfigCheck validates NAG_CONFIG through the same code path as boot
 // and prints either the resolved preset list in file order or the located
 // error (§5.5). It never writes the default file — an absent config is an
 // error here, not something to fix silently.
 func runConfigCheck(stdout, stderr io.Writer) int {
-	cfg, err := config.Check(configPath())
+	cfg, err := config.Check(envOr("NAG_CONFIG", defaultConfig))
 	if err != nil {
 		fmt.Fprintf(stderr, "FATAL: %v\n", err)
 		return 1
