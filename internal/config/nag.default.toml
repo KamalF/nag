@@ -1,0 +1,41 @@
+[general]
+timezone       = "Europe/Paris"
+default_preset = "tomorrow"     # bare Enter in the capture bar
+retention_days = 30             # 0 = keep cleared reminders forever
+
+[picker]
+hour_min     = 8
+hour_max     = 18
+minute_step  = 15               # 60 must be divisible by this
+default_time = "09:00"
+week_start   = "monday"         # monday | sunday
+
+[[preset]]
+key    = "30min"
+label  = "30 min"
+kind   = "offset"
+offset = "30m"
+quick  = true                   # also offered as a row re-snooze chip
+
+[[preset]]
+key    = "3h"
+label  = "3 hours"
+kind   = "offset"
+offset = "3h"
+quick  = true
+
+[[preset]]
+key   = "tomorrow"
+label = "Tomorrow 9:00"
+kind  = "clock"
+days  = 1
+at    = "09:00"
+quick = true
+
+[[preset]]
+key         = "next-monday"
+label       = "Next Monday"
+kind        = "weekday"
+weekday     = "monday"
+at          = "09:00"
+same_day_ok = false             # on a Monday this means the FOLLOWING Monday
