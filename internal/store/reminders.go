@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 )
 
 // Reminder is one row of the §4 reminders table. Pointer fields are the
@@ -94,6 +96,58 @@ func (s *Store) ChannelNames(ctx context.Context) (map[string]bool, error) {
 		names[name] = enabled
 	}
 	return names, rows.Err()
+}
+
+// ReminderUpdate is one PATCH's writes. nil means "leave unchanged";
+// ExtraChannels pointing at an empty slice means "clear the list" —
+// presence and null are different answers in §8.3.
+type ReminderUpdate struct {
+	Text          *string
+	DueAt         *int64
+	ExtraChannels *[]string // must arrive canonical (§8.3)
+}
+
+// UpdateReminder applies u in one UPDATE (§4.1). A DueAt is a re-time:
+// notified_at and pushed_at reset (or stamp to now on a backdated value,
+// exactly as on create), done_at clears, delivery_error clears. A changed
+// ExtraChannels list — an ordered comparison, both sides canonical — also
+// clears delivery_error; an identical list touches nothing, so re-saving
+// a row without changing its channels is not a clear.
+func (s *Store) UpdateReminder(ctx context.Context, id int64, u ReminderUpdate, now int64) (Reminder, error) {
+	current, err := s.GetReminder(ctx, id)
+	if err != nil {
+		return Reminder{}, err
+	}
+
+	var set []string
+	var args []any
+	if u.Text != nil {
+		set = append(set, "text = ?")
+		args = append(args, *u.Text)
+	}
+	if u.DueAt != nil {
+		var notified, pushed *int64
+		if *u.DueAt <= now {
+			notified, pushed = &now, &now
+		}
+		set = append(set, "due_at = ?", "notified_at = ?", "pushed_at = ?",
+			"done_at = NULL", "delivery_error = NULL")
+		args = append(args, *u.DueAt, notified, pushed)
+	}
+	if u.ExtraChannels != nil && !slices.Equal(current.ExtraChannels, *u.ExtraChannels) {
+		set = append(set, "extra_channels = ?", "delivery_error = NULL")
+		args = append(args, encodeChannels(*u.ExtraChannels))
+	}
+	if len(set) == 0 {
+		return current, nil
+	}
+	args = append(args, id)
+	_, err = s.db.ExecContext(ctx,
+		"UPDATE reminders SET "+strings.Join(set, ", ")+" WHERE id = ?", args...)
+	if err != nil {
+		return Reminder{}, err
+	}
+	return s.GetReminder(ctx, id)
 }
 
 // MarkDone stamps done_at = now and returns the row. On a row that is
