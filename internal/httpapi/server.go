@@ -31,6 +31,7 @@ const maxBodyBytes = 16 << 10
 type Server struct {
 	store *store.Store
 	cfg   *config.Config
+	loc   *time.Location // general.timezone, resolved once — the config is validated
 	web   fs.FS
 	log   *slog.Logger
 
@@ -42,9 +43,14 @@ type Server struct {
 }
 
 func New(st *store.Store, cfg *config.Config, web fs.FS, token string, log *slog.Logger) *Server {
+	loc, err := time.LoadLocation(cfg.General.Timezone)
+	if err != nil {
+		loc = time.UTC // unreachable behind config validation (§5.5)
+	}
 	return &Server{
 		store:      st,
 		cfg:        cfg,
+		loc:        loc,
 		web:        web,
 		log:        log,
 		token:      token,
@@ -69,6 +75,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /logout", s.handleLogout)
 
 	api := http.NewServeMux()
+	api.HandleFunc("GET /api/state", s.handleState)
+	api.HandleFunc("POST /api/reminders", s.handleCreateReminder)
 	api.HandleFunc("/api/", s.handleAPINotFound)
 	mux.Handle("/api/", s.requireAuth(api))
 

@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"database/sql"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -14,11 +15,18 @@ import (
 
 	"github.com/KamalF/nag/internal/config"
 	"github.com/KamalF/nag/internal/store"
+	_ "modernc.org/sqlite"
 )
 
 func testServer(t *testing.T, logs io.Writer) *Server {
+	s, _ := testServerWithDB(t, logs)
+	return s
+}
+
+func testServerWithDB(t *testing.T, logs io.Writer) (*Server, string) {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "nag.db"))
+	dbPath := filepath.Join(t.TempDir(), "nag.db")
+	st, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,10 +37,43 @@ func testServer(t *testing.T, logs io.Writer) *Server {
 	web := fstest.MapFS{
 		"index.html": &fstest.MapFile{Data: []byte("<h1>test index</h1>")},
 	}
-	cfg := &config.Config{}
+	cfg := testConfig()
 	s := New(st, cfg, web, testToken, slog.New(slog.NewTextHandler(logs, nil)))
 	s.loginSleep = time.Millisecond // keep the §8.1 failure sleep out of test time
-	return s
+	return s, dbPath
+}
+
+func ptr[T any](v T) *T { return &v }
+
+func testConfig() *config.Config {
+	return &config.Config{
+		General: config.General{
+			Timezone:      "Europe/Paris",
+			DefaultPreset: "30min",
+			RetentionDays: 30,
+		},
+		Presets: []config.Preset{
+			{Key: "30min", Label: "30 min", Kind: "offset", Offset: ptr("30m"), Quick: true},
+			{Key: "tomorrow", Label: "Tomorrow 9:00", Kind: "clock", At: ptr("09:00"), Days: ptr(1), Quick: true},
+		},
+	}
+}
+
+// insertChannel writes a channels row through a second connection on the
+// same file — the CLI that owns channel writes is an M4 deliverable, and
+// this mirrors its cross-process access (§4.3).
+func insertChannel(t *testing.T, dbPath, name string, enabled bool) {
+	t.Helper()
+	db, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(
+		"INSERT INTO channels (name, url, enabled) VALUES (?, 'ntfy://host/topic', ?)",
+		name, enabled); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func get(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorder {
