@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/KamalF/nag/internal/config"
 	"github.com/KamalF/nag/internal/httpapi"
+	"github.com/KamalF/nag/internal/notify"
 	"github.com/KamalF/nag/internal/store"
 	"github.com/KamalF/nag/web"
 )
@@ -54,6 +56,9 @@ func runServe(stderr io.Writer) int {
 	logger.Info("timezone", "tz", cfg.General.Timezone)
 	logger.Info("presets", "count", len(cfg.Presets))
 	logger.Info("config version", "config_version", api.ConfigVersion())
+
+	// context wiring for graceful shutdown is an M4 commit (§10.1)
+	go notify.NewSweep(st, logger).Run(context.Background())
 	server := &http.Server{
 		Addr:              env.addr,
 		Handler:           api.Handler(),
