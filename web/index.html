@@ -6,7 +6,28 @@
   <title>Nag</title>
 </head>
 <body>
-  <h1>Nag</h1>
-  <p>Placeholder — the UI lands with the M1 minimal-UI commit.</p>
+  <main>
+    <section id="login" hidden>
+      <input id="token" type="password" placeholder="Token" autocomplete="current-password">
+      <button id="login-btn">Log in</button>
+      <p id="login-error" role="alert"></p>
+    </section>
+
+    <section id="capture" hidden>
+      <input id="text" type="text" placeholder="Remind me to…" enterkeyhint="done">
+      <div id="chips"></div>
+    </section>
+
+    <section id="overdue-zone" hidden>
+      <h2>Needs you now (<span id="overdue-count">0</span>)</h2>
+      <ul id="overdue"></ul>
+    </section>
+
+    <section id="later-zone" hidden>
+      <h2>Later</h2>
+      <ul id="later"></ul>
+    </section>
+  </main>
+  <script src="/app.js"></script>
 </body>
 </html>
