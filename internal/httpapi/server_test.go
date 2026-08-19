@@ -37,11 +37,19 @@ func testServerWithDB(t *testing.T, logs io.Writer) (*Server, string) {
 	web := fstest.MapFS{
 		"index.html": &fstest.MapFile{Data: []byte("<h1>test index</h1>")},
 	}
-	cfg := testConfig()
-	s := New(st, cfg, web, testToken, slog.New(slog.NewTextHandler(logs, nil)))
+	s := New(Options{
+		Store:       st,
+		Config:      testConfig(),
+		Web:         web,
+		Token:       testToken,
+		VAPIDPublic: testVAPIDPublic,
+		Log:         slog.New(slog.NewTextHandler(logs, nil)),
+	})
 	s.loginSleep = time.Millisecond // keep the §8.1 failure sleep out of test time
 	return s, dbPath
 }
+
+const testVAPIDPublic = "test-vapid-public-key"
 
 func ptr[T any](v T) *T { return &v }
 

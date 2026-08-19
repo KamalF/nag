@@ -77,6 +77,33 @@ func (s *Store) ListPending(ctx context.Context) ([]Reminder, error) {
 	return out, rows.Err()
 }
 
+// Channel is the client-visible half of a channels row. The URL never
+// reaches the API layer in any form (§4.1) — the send path gets its own
+// accessor when it lands.
+type Channel struct {
+	Name    string
+	Enabled bool
+}
+
+// ListChannels returns every channel in name order (§8.2) — chip order in
+// the UI, never re-sorted client-side.
+func (s *Store) ListChannels(ctx context.Context) ([]Channel, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT name, enabled FROM channels ORDER BY name")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Channel
+	for rows.Next() {
+		var c Channel
+		if err := rows.Scan(&c.Name, &c.Enabled); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 // ChannelNames returns every channel name mapped to its enabled flag —
 // §8.3 accepts a disabled channel at write time (it is skipped at send
 // time), so validation needs existence, not state.

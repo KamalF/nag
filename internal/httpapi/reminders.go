@@ -111,10 +111,11 @@ func (s *Server) handleCreateReminder(w http.ResponseWriter, r *http.Request) {
 }
 
 type stateResponse struct {
-	ServerTime   int64              `json:"server_time"`
-	OverdueCount int                `json:"overdue_count"`
-	Overdue      []reminderResponse `json:"overdue"`
-	Later        []reminderResponse `json:"later"`
+	ServerTime    int64              `json:"server_time"`
+	ConfigVersion int                `json:"config_version"`
+	OverdueCount  int                `json:"overdue_count"`
+	Overdue       []reminderResponse `json:"overdue"`
+	Later         []reminderResponse `json:"later"`
 }
 
 // handleState is GET /api/state (§8.2). `now` is read once and every part
@@ -129,9 +130,10 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := stateResponse{
-		ServerTime: now,
-		Overdue:    []reminderResponse{},
-		Later:      []reminderResponse{},
+		ServerTime:    now,
+		ConfigVersion: s.configVersion,
+		Overdue:       []reminderResponse{},
+		Later:         []reminderResponse{},
 	}
 	for _, rem := range pending { // already sorted by due_at, id (§8.2)
 		if rem.DueAt <= now {

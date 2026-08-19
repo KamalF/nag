@@ -35,29 +35,48 @@ type Server struct {
 	web   fs.FS
 	log   *slog.Logger
 
-	token     string
-	cookieKey []byte
+	token       string
+	cookieKey   []byte
+	vapidPublic string
+
+	// configVersion lives in memory and restarts at 1 (§5.5); it moves
+	// only when M4's reload changes what the client can see.
+	configVersion int
 
 	loginMu    sync.Mutex
 	loginSleep time.Duration
 }
 
-func New(st *store.Store, cfg *config.Config, web fs.FS, token string, log *slog.Logger) *Server {
-	loc, err := time.LoadLocation(cfg.General.Timezone)
+type Options struct {
+	Store       *store.Store
+	Config      *config.Config
+	Web         fs.FS
+	Token       string
+	VAPIDPublic string
+	Log         *slog.Logger
+}
+
+func New(o Options) *Server {
+	loc, err := time.LoadLocation(o.Config.General.Timezone)
 	if err != nil {
 		loc = time.UTC // unreachable behind config validation (§5.5)
 	}
 	return &Server{
-		store:      st,
-		cfg:        cfg,
-		loc:        loc,
-		web:        web,
-		log:        log,
-		token:      token,
-		cookieKey:  cookieKey(token),
-		loginSleep: 250 * time.Millisecond,
+		store:         o.Store,
+		cfg:           o.Config,
+		loc:           loc,
+		web:           o.Web,
+		log:           o.Log,
+		token:         o.Token,
+		cookieKey:     cookieKey(o.Token),
+		vapidPublic:   o.VAPIDPublic,
+		configVersion: 1,
+		loginSleep:    250 * time.Millisecond,
 	}
 }
+
+// ConfigVersion is read by serve's §10.4 boot line.
+func (s *Server) ConfigVersion() int { return s.configVersion }
 
 // Handler assembles the mux. `GET /` (the embedded frontend) is
 // unauthenticated (§8.1); `/api/` is registered explicitly as a catch-all
@@ -75,6 +94,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /logout", s.handleLogout)
 
 	api := http.NewServeMux()
+	api.HandleFunc("GET /api/config", s.handleConfig)
+	api.HandleFunc("GET /api/channels", s.handleChannels)
 	api.HandleFunc("GET /api/state", s.handleState)
 	api.HandleFunc("POST /api/reminders", s.handleCreateReminder)
 	api.HandleFunc("POST /api/reminders/{id}/done", s.handleDone)

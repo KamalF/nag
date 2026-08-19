@@ -36,16 +36,24 @@ func runServe(stderr io.Writer) int {
 	}
 	defer st.Close()
 
+	api := httpapi.New(httpapi.Options{
+		Store:       st,
+		Config:      cfg,
+		Web:         web.Files,
+		Token:       env.token,
+		VAPIDPublic: env.vapidPublic,
+		Log:         logger,
+	})
+
 	// §10.4 boot lines — the answer to "what is this instance actually
-	// running". config_version and subscription count join in later commits.
+	// running". The subscription count joins with the push commits.
 	logger.Info("build version", "version", version)
 	logger.Info("listening", "addr", env.addr)
 	logger.Info("database", "path", env.db)
 	logger.Info("config", "path", env.config, "written_from_default", wroteDefault)
 	logger.Info("timezone", "tz", cfg.General.Timezone)
 	logger.Info("presets", "count", len(cfg.Presets))
-
-	api := httpapi.New(st, cfg, web.Files, env.token, logger)
+	logger.Info("config version", "config_version", api.ConfigVersion())
 	server := &http.Server{
 		Addr:              env.addr,
 		Handler:           api.Handler(),
