@@ -47,6 +47,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "version":
 		fmt.Fprintf(stdout, "nag %s %s\n", version, runtime.Version())
 		return 0
+	case "serve":
+		return runServe(stderr)
 	case "genkeys":
 		return runGenkeys(stdout, stderr)
 	case "config":

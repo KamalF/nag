@@ -3,6 +3,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
@@ -79,6 +80,13 @@ func Open(path string) (*Store, error) {
 
 func (s *Store) Close() error {
 	return s.db.Close()
+}
+
+// Healthy runs the §8.2 SELECT 1 — /healthz must not answer 200 over a
+// broken database.
+func (s *Store) Healthy(ctx context.Context) error {
+	var one int
+	return s.db.QueryRowContext(ctx, "SELECT 1").Scan(&one)
 }
 
 func migrate(db *sql.DB) error {
