@@ -68,7 +68,24 @@ func TestLoadKeepsFieldPresence(t *testing.T) {
 
 func TestLoadExistingFileIsNotOverwritten(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nag.toml")
-	own := "[general]\ntimezone = \"UTC\"\n"
+	own := `[general]
+timezone = "UTC"
+default_preset = "soon"
+retention_days = 0
+
+[picker]
+hour_min = 0
+hour_max = 23
+minute_step = 5
+default_time = "10:00"
+week_start = "sunday"
+
+[[preset]]
+key = "soon"
+label = "Soon"
+kind = "offset"
+offset = "10m"
+`
 	if err := os.WriteFile(path, []byte(own), 0o644); err != nil {
 		t.Fatal(err)
 	}

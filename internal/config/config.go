@@ -4,11 +4,13 @@
 package config
 
 import (
+	"bytes"
 	_ "embed"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
+	"strings"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -54,10 +56,11 @@ type Preset struct {
 	Quick     bool    `toml:"quick"`
 }
 
-// Load reads the TOML config at path. When the path is genuinely absent it
-// first writes the embedded default there and reports wroteDefault = true.
-// A file that is present but unreadable or unparseable is an error naming
-// the path — never overwritten with the default (§5.3).
+// Load reads, decodes, and validates the TOML config at path. When the path
+// is genuinely absent it first writes the embedded default there and reports
+// wroteDefault = true. A file that is present but unreadable, unparseable,
+// or invalid is an error naming the path — never overwritten with the
+// default (§5.3).
 func Load(path string) (cfg *Config, wroteDefault bool, err error) {
 	raw, err := os.ReadFile(path)
 	switch {
@@ -77,10 +80,46 @@ func Load(path string) (cfg *Config, wroteDefault bool, err error) {
 	return cfg, wroteDefault, nil
 }
 
+// Check loads and validates the config exactly as boot does, except that an
+// absent file is an error rather than a prompt to write the default —
+// `nag config check` never fixes anything silently (§5.5). The reload path
+// (M4) reuses it for the same reason.
+func Check(path string) (*Config, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read config %s: %w", path, err)
+	}
+	cfg, err := parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("config %s: %w", path, err)
+	}
+	return cfg, nil
+}
+
 func parse(raw []byte) (*Config, error) {
 	var cfg Config
-	if err := toml.Unmarshal(raw, &cfg); err != nil {
+	dec := toml.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields() // §5.5: an unknown key or section is an error
+	if err := dec.Decode(&cfg); err != nil {
+		var strict *toml.StrictMissingError
+		if errors.As(err, &strict) {
+			return nil, unknownKeysError(strict)
+		}
+		return nil, err
+	}
+	if err := validate(&cfg); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+// unknownKeysError names every key the file states that the app never reads
+// (§5.5): silently ignoring one means a chip behaving as though the line
+// were not there.
+func unknownKeysError(strict *toml.StrictMissingError) error {
+	names := make([]string, 0, len(strict.Errors))
+	for _, e := range strict.Errors {
+		names = append(names, strings.Join(e.Key(), "."))
+	}
+	return fmt.Errorf("unknown key or section: %s", strings.Join(names, ", "))
 }
