@@ -96,6 +96,52 @@ func (s *Store) ChannelNames(ctx context.Context) (map[string]bool, error) {
 	return names, rows.Err()
 }
 
+// MarkDone stamps done_at = now and returns the row. On a row that is
+// already done it is a successful no-op keeping the original done_at
+// (§8.2): re-stamping would push the retention clock forward on every
+// double-tap. sql.ErrNoRows when the id does not exist.
+func (s *Store) MarkDone(ctx context.Context, id, now int64) (Reminder, error) {
+	_, err := s.db.ExecContext(ctx,
+		"UPDATE reminders SET done_at = ? WHERE id = ? AND done_at IS NULL", now, id)
+	if err != nil {
+		return Reminder{}, err
+	}
+	return s.GetReminder(ctx, id)
+}
+
+// MarkUndone clears done_at, and in the same statement stamps
+// pushed_at = now exactly when notified_at IS NOT NULL AND pushed_at IS
+// NULL (§4.1): a row cleared during a cooldown was dropped from the held
+// set by done_at, and un-clearing it later must not walk it back into a
+// digest — while a row cleared before it ever fired keeps its NULLs and
+// returns as a live phase-1 candidate. On a row that isn't done it is a
+// successful no-op. sql.ErrNoRows when the id does not exist.
+func (s *Store) MarkUndone(ctx context.Context, id, now int64) (Reminder, error) {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE reminders SET
+		  done_at = NULL,
+		  pushed_at = CASE
+		    WHEN notified_at IS NOT NULL AND pushed_at IS NULL THEN ?
+		    ELSE pushed_at
+		  END
+		WHERE id = ? AND done_at IS NOT NULL`, now, id)
+	if err != nil {
+		return Reminder{}, err
+	}
+	return s.GetReminder(ctx, id)
+}
+
+// DeleteReminder hard-deletes the row (§8.2's curl affordance). It reports
+// whether a row existed.
+func (s *Store) DeleteReminder(ctx context.Context, id int64) (bool, error) {
+	res, err := s.db.ExecContext(ctx, "DELETE FROM reminders WHERE id = ?", id)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
 type scannable interface {
 	Scan(dest ...any) error
 }

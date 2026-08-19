@@ -77,6 +77,9 @@ func (s *Server) Handler() http.Handler {
 	api := http.NewServeMux()
 	api.HandleFunc("GET /api/state", s.handleState)
 	api.HandleFunc("POST /api/reminders", s.handleCreateReminder)
+	api.HandleFunc("POST /api/reminders/{id}/done", s.handleDone)
+	api.HandleFunc("POST /api/reminders/{id}/undone", s.handleUndone)
+	api.HandleFunc("DELETE /api/reminders/{id}", s.handleDelete)
 	api.HandleFunc("/api/", s.handleAPINotFound)
 	mux.Handle("/api/", s.requireAuth(api))
 
