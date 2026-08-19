@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -108,6 +110,13 @@ func (s *Server) handleCreateReminder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, toReminderResponse(rem))
 }
 
+type stateResponse struct {
+	ServerTime   int64              `json:"server_time"`
+	OverdueCount int                `json:"overdue_count"`
+	Overdue      []reminderResponse `json:"overdue"`
+	Later        []reminderResponse `json:"later"`
+}
+
 // handleState is GET /api/state (§8.2). `now` is read once and every part
 // of the response derives from it — server_time, overdue_count, and which
 // list each row lands in — so the list can never disagree with the badge.
@@ -119,21 +128,39 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "")
 		return
 	}
-	overdue := []reminderResponse{}
-	later := []reminderResponse{}
+	resp := stateResponse{
+		ServerTime: now,
+		Overdue:    []reminderResponse{},
+		Later:      []reminderResponse{},
+	}
 	for _, rem := range pending { // already sorted by due_at, id (§8.2)
 		if rem.DueAt <= now {
-			overdue = append(overdue, toReminderResponse(rem))
+			resp.Overdue = append(resp.Overdue, toReminderResponse(rem))
 		} else {
-			later = append(later, toReminderResponse(rem))
+			resp.Later = append(resp.Later, toReminderResponse(rem))
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"server_time":   now,
-		"overdue_count": len(overdue),
-		"overdue":       overdue,
-		"later":         later,
-	})
+	resp.OverdueCount = len(resp.Overdue)
+
+	etag := stateETag(resp)
+	w.Header().Set("ETag", etag)
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified) // client reads the clock from Date (§9.3)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// stateETag hashes the response with server_time excluded (§8.2): that
+// field moves every second, and hashing it would mean the 304 never once
+// fires. Weak (W/) is the accurate label, not a hedge: two responses
+// sharing the tag are equivalent for every purpose this client has and
+// are not byte-identical, since server_time has moved between them.
+func stateETag(resp stateResponse) string {
+	resp.ServerTime = 0
+	raw, _ := json.Marshal(resp)
+	sum := sha256.Sum256(raw)
+	return `W/"` + hex.EncodeToString(sum[:8]) + `"`
 }
 
 // resolveDueAt applies §8.3's exactly-one-of rule and returns the due
