@@ -198,6 +198,35 @@ kind = "cron"
 			[]string{`"p"`, `"cron"`},
 		},
 		{
+			// LoadLocation("") returns UTC with a nil error, so a deleted
+			// timezone line would otherwise pass validation and schedule
+			// every clock/weekday preset in UTC silently.
+			"empty timezone",
+			doc(`[general]
+timezone = ""
+default_preset = "p"
+retention_days = 30
+`, "", ""),
+			[]string{"timezone"},
+		},
+		{
+			"missing timezone line",
+			doc(`[general]
+default_preset = "p"
+retention_days = 30
+`, "", ""),
+			[]string{"timezone"},
+		},
+		{
+			"Local is not a stated timezone",
+			doc(`[general]
+timezone = "Local"
+default_preset = "p"
+retention_days = 30
+`, "", ""),
+			[]string{"timezone", "Local"},
+		},
+		{
 			"unknown timezone",
 			doc(`[general]
 timezone = "Mars/Olympus"

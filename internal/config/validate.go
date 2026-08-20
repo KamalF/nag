@@ -49,6 +49,12 @@ func validate(cfg *Config) error {
 }
 
 func validateGeneral(g General) error {
+	// LoadLocation("") is UTC and "Local" is wherever the process runs —
+	// both nil-error, neither a timezone the file actually states, and a
+	// missing key must fail loudly (§5.5), not schedule in UTC silently.
+	if g.Timezone == "" || g.Timezone == "Local" {
+		return fmt.Errorf("[general].timezone: %q is not a timezone name (e.g. \"Europe/Paris\")", g.Timezone)
+	}
 	if _, err := time.LoadLocation(g.Timezone); err != nil {
 		return fmt.Errorf("[general].timezone: unknown timezone %q", g.Timezone)
 	}
