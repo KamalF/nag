@@ -112,11 +112,12 @@ func (s *Server) handleCreateReminder(w http.ResponseWriter, r *http.Request) {
 }
 
 type stateResponse struct {
-	ServerTime    int64              `json:"server_time"`
-	ConfigVersion int                `json:"config_version"`
-	OverdueCount  int                `json:"overdue_count"`
-	Overdue       []reminderResponse `json:"overdue"`
-	Later         []reminderResponse `json:"later"`
+	ServerTime     int64              `json:"server_time"`
+	ConfigVersion  int                `json:"config_version"`
+	OverdueCount   int                `json:"overdue_count"`
+	PushSubscribed bool               `json:"push_subscribed"` // instance-wide, not per-device (§8.2)
+	Overdue        []reminderResponse `json:"overdue"`
+	Later          []reminderResponse `json:"later"`
 }
 
 // handleState is GET /api/state (§8.2). `now` is read once and every part
@@ -130,11 +131,18 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "")
 		return
 	}
+	subscriptions, err := s.store.SubscriptionCount(r.Context())
+	if err != nil {
+		s.log.Error("state: count subscriptions", "error", err)
+		writeError(w, http.StatusInternalServerError, "")
+		return
+	}
 	resp := stateResponse{
-		ServerTime:    now,
-		ConfigVersion: s.configVersion,
-		Overdue:       []reminderResponse{},
-		Later:         []reminderResponse{},
+		ServerTime:     now,
+		ConfigVersion:  s.configVersion,
+		PushSubscribed: subscriptions > 0,
+		Overdue:        []reminderResponse{},
+		Later:          []reminderResponse{},
 	}
 	for _, rem := range pending { // already sorted by due_at, id (§8.2)
 		if rem.DueAt <= now {

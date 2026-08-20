@@ -102,6 +102,8 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/reminders/{id}/undone", s.handleUndone)
 	api.HandleFunc("PATCH /api/reminders/{id}", s.handlePatch)
 	api.HandleFunc("DELETE /api/reminders/{id}", s.handleDelete)
+	api.HandleFunc("POST /api/push/subscribe", s.handleSubscribe)
+	api.HandleFunc("POST /api/push/unsubscribe", s.handleUnsubscribe)
 	api.HandleFunc("/api/", s.handleAPINotFound)
 	mux.Handle("/api/", s.requireAuth(api))
 

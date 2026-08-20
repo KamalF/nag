@@ -55,6 +55,9 @@ func runServe(stderr io.Writer) int {
 	logger.Info("timezone", "tz", cfg.General.Timezone)
 	logger.Info("presets", "count", len(cfg.Presets))
 	logger.Info("config version", "config_version", api.ConfigVersion())
+	if n, err := st.SubscriptionCount(context.Background()); err == nil {
+		logger.Info("push subscriptions", "count", n)
+	}
 
 	// context wiring for graceful shutdown is an M4 commit (§10.1)
 	go notify.NewSweep(st, logger).Run(context.Background())
