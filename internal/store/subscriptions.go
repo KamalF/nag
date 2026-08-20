@@ -36,3 +36,42 @@ func (s *Store) SubscriptionCount(ctx context.Context) (int, error) {
 	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM push_subscriptions").Scan(&n)
 	return n, err
 }
+
+// Subscription is one push_subscriptions row as the sender needs it.
+// VAPIDPublic is the key the subscription is bound to — compared against
+// the configured key on a 401/403 to tell a stale key from a bug (§7.1).
+type Subscription struct {
+	Endpoint    string
+	P256dh      string
+	Auth        string
+	VAPIDPublic string
+}
+
+// ListSubscriptions returns every stored subscription, oldest first.
+func (s *Store) ListSubscriptions(ctx context.Context) ([]Subscription, error) {
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT endpoint, p256dh, auth, vapid_public FROM push_subscriptions ORDER BY id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Subscription
+	for rows.Next() {
+		var sub Subscription
+		if err := rows.Scan(&sub.Endpoint, &sub.P256dh, &sub.Auth, &sub.VAPIDPublic); err != nil {
+			return nil, err
+		}
+		out = append(out, sub)
+	}
+	return out, rows.Err()
+}
+
+// MismatchedKeyCount counts subscriptions bound to a key other than the
+// configured one — the §7.1 boot WARNING that turns three weeks of silent
+// failures into a startup line.
+func (s *Store) MismatchedKeyCount(ctx context.Context, configuredKey string) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM push_subscriptions WHERE vapid_public != ?", configuredKey).Scan(&n)
+	return n, err
+}

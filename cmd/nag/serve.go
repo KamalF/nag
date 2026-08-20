@@ -58,6 +58,12 @@ func runServe(stderr io.Writer) int {
 	if n, err := st.SubscriptionCount(context.Background()); err == nil {
 		logger.Info("push subscriptions", "count", n)
 	}
+	// §7.1: finding a retired key at startup beats three weeks of silent
+	// push failures
+	if n, err := st.MismatchedKeyCount(context.Background(), env.vapidPublic); err == nil && n > 0 {
+		logger.Warn("subscriptions bound to a different vapid key — each browser must re-subscribe (open the app once per device)",
+			"count", n)
+	}
 
 	// context wiring for graceful shutdown is an M4 commit (§10.1)
 	go notify.NewSweep(st, logger).Run(context.Background())
