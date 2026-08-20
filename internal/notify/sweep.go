@@ -12,6 +12,12 @@ import (
 
 const sweepInterval = 30 * time.Second
 
+// tooLateSeconds is §7.3's gate: a row more than 30 minutes overdue when
+// the sweep first sees it appears in the list and produces no output. The
+// same 30 minutes is the M2 push cooldown — one number the user can hold,
+// owned here because it is notification policy, not storage.
+const tooLateSeconds = 1800
+
 type Sweep struct {
 	store    *store.Store
 	log      *slog.Logger
@@ -46,7 +52,7 @@ func (s *Sweep) Run(ctx context.Context) {
 func (s *Sweep) tick(ctx context.Context) {
 	now := s.now().Unix()
 
-	eligible, tooLate, err := s.store.SweepMark(ctx, now)
+	eligible, tooLate, err := s.store.SweepMark(ctx, now, tooLateSeconds)
 	if err != nil {
 		s.log.Error("sweep: mark", "error", err)
 		return

@@ -17,10 +17,10 @@ import (
 // the one that must still be alive in a year. WriteTimeout is also the
 // number §7.5's push-test send budget is derived from.
 const (
-	ReadHeaderTimeout = 10 // seconds
-	ReadTimeout       = 15
-	WriteTimeout      = 15
-	IdleTimeout       = 120
+	ReadHeaderTimeout = 10 * time.Second
+	ReadTimeout       = 15 * time.Second
+	WriteTimeout      = 15 * time.Second
+	IdleTimeout       = 120 * time.Second
 )
 
 // maxBodyBytes caps every request body (§8.2): `text` is limited to 1000

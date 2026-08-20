@@ -27,15 +27,23 @@ type Reminder struct {
 
 const reminderColumns = "id, text, due_at, notified_at, pushed_at, done_at, created_at, extra_channels, delivery_error"
 
+// backdatedStamps is §4.1's born-notified rule, shared by create and
+// re-time: a due_at that is not in the future stamps both lifecycle
+// columns to now, so the row is invisible to the sweep's phase 1 and can
+// never become a digest candidate.
+func backdatedStamps(dueAt, now int64) (notified, pushed *int64) {
+	if dueAt <= now {
+		return &now, &now
+	}
+	return nil, nil
+}
+
 // CreateReminder inserts a reminder. When dueAt is not after now, the same
 // statement stamps notified_at = pushed_at = now (§4.1): a backdated write
-// appears in the overdue list immediately, is invisible to the sweep's
-// phase 1, and can never become a digest candidate.
+// appears in the overdue list immediately and never notifies.
 func (s *Store) CreateReminder(ctx context.Context, text string, dueAt int64, extraChannels []string, now int64) (Reminder, error) {
-	var notified, pushed *int64
-	if dueAt <= now {
-		notified, pushed = &now, &now
-	}
+	extraChannels = canonicalChannelList(extraChannels)
+	notified, pushed := backdatedStamps(dueAt, now)
 	res, err := s.db.ExecContext(ctx,
 		"INSERT INTO reminders (text, due_at, notified_at, pushed_at, done_at, created_at, extra_channels) VALUES (?, ?, ?, ?, NULL, ?, ?)",
 		text, dueAt, notified, pushed, now, encodeChannels(extraChannels))
@@ -104,48 +112,23 @@ func (s *Store) ListChannels(ctx context.Context) ([]Channel, error) {
 	return out, rows.Err()
 }
 
-// ChannelNames returns every channel name mapped to its enabled flag —
-// §8.3 accepts a disabled channel at write time (it is skipped at send
-// time), so validation needs existence, not state.
-func (s *Store) ChannelNames(ctx context.Context) (map[string]bool, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT name, enabled FROM channels")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	names := map[string]bool{}
-	for rows.Next() {
-		var name string
-		var enabled bool
-		if err := rows.Scan(&name, &enabled); err != nil {
-			return nil, err
-		}
-		names[name] = enabled
-	}
-	return names, rows.Err()
-}
-
 // ReminderUpdate is one PATCH's writes. nil means "leave unchanged";
 // ExtraChannels pointing at an empty slice means "clear the list" —
 // presence and null are different answers in §8.3.
 type ReminderUpdate struct {
 	Text          *string
 	DueAt         *int64
-	ExtraChannels *[]string // must arrive canonical (§8.3)
+	ExtraChannels *[]string
 }
 
-// UpdateReminder applies u in one UPDATE (§4.1). A DueAt is a re-time:
+// UpdateReminder applies u to current — the row as the caller just read it
+// (one read, one pre-image) — in one UPDATE (§4.1). A DueAt is a re-time:
 // notified_at and pushed_at reset (or stamp to now on a backdated value,
 // exactly as on create), done_at clears, delivery_error clears. A changed
-// ExtraChannels list — an ordered comparison, both sides canonical — also
+// ExtraChannels list — an ordered comparison of the canonical forms — also
 // clears delivery_error; an identical list touches nothing, so re-saving
 // a row without changing its channels is not a clear.
-func (s *Store) UpdateReminder(ctx context.Context, id int64, u ReminderUpdate, now int64) (Reminder, error) {
-	current, err := s.GetReminder(ctx, id)
-	if err != nil {
-		return Reminder{}, err
-	}
-
+func (s *Store) UpdateReminder(ctx context.Context, current Reminder, u ReminderUpdate, now int64) (Reminder, error) {
 	var set []string
 	var args []any
 	if u.Text != nil {
@@ -153,28 +136,28 @@ func (s *Store) UpdateReminder(ctx context.Context, id int64, u ReminderUpdate, 
 		args = append(args, *u.Text)
 	}
 	if u.DueAt != nil {
-		var notified, pushed *int64
-		if *u.DueAt <= now {
-			notified, pushed = &now, &now
-		}
+		notified, pushed := backdatedStamps(*u.DueAt, now)
 		set = append(set, "due_at = ?", "notified_at = ?", "pushed_at = ?",
 			"done_at = NULL", "delivery_error = NULL")
 		args = append(args, *u.DueAt, notified, pushed)
 	}
-	if u.ExtraChannels != nil && !slices.Equal(current.ExtraChannels, *u.ExtraChannels) {
-		set = append(set, "extra_channels = ?", "delivery_error = NULL")
-		args = append(args, encodeChannels(*u.ExtraChannels))
+	if u.ExtraChannels != nil {
+		canonical := canonicalChannelList(*u.ExtraChannels)
+		if !slices.Equal(current.ExtraChannels, canonical) {
+			set = append(set, "extra_channels = ?", "delivery_error = NULL")
+			args = append(args, encodeChannels(canonical))
+		}
 	}
 	if len(set) == 0 {
 		return current, nil
 	}
-	args = append(args, id)
-	_, err = s.db.ExecContext(ctx,
+	args = append(args, current.ID)
+	_, err := s.db.ExecContext(ctx,
 		"UPDATE reminders SET "+strings.Join(set, ", ")+" WHERE id = ?", args...)
 	if err != nil {
 		return Reminder{}, err
 	}
-	return s.GetReminder(ctx, id)
+	return s.GetReminder(ctx, current.ID)
 }
 
 // MarkDone stamps done_at = now and returns the row. On a row that is
@@ -243,8 +226,9 @@ func scanReminder(row scannable) (Reminder, error) {
 		r.DeliveryError = &deliveryError.String
 	}
 	if channels.Valid {
-		if err := json.Unmarshal([]byte(channels.String), &r.ExtraChannels); err != nil {
-			return Reminder{}, fmt.Errorf("reminder %d: extra_channels: %w", r.ID, err)
+		r.ExtraChannels, err = decodeChannels(r.ID, channels.String)
+		if err != nil {
+			return Reminder{}, err
 		}
 	}
 	return r, nil
@@ -257,6 +241,19 @@ func nullableInt(v sql.NullInt64) *int64 {
 	return &v.Int64
 }
 
+// canonicalChannelList is the one stored form of a channel set (§8.3):
+// de-duplicated and sorted, so §4.1's "the list differs" test is a plain
+// ordered comparison. The store owns this invariant — its own comparison
+// in UpdateReminder depends on it, whichever caller writes.
+func canonicalChannelList(names []string) []string {
+	if len(names) == 0 {
+		return nil
+	}
+	canonical := slices.Clone(names)
+	slices.Sort(canonical)
+	return slices.Compact(canonical)
+}
+
 // encodeChannels stores an empty list as NULL — §4's column is nullable
 // and §8.2 re-materialises [] on the way out.
 func encodeChannels(names []string) *string {
@@ -266,4 +263,14 @@ func encodeChannels(names []string) *string {
 	raw, _ := json.Marshal(names)
 	s := string(raw)
 	return &s
+}
+
+// decodeChannels is encodeChannels' twin, shared by every scanner of the
+// column.
+func decodeChannels(id int64, raw string) ([]string, error) {
+	var names []string
+	if err := json.Unmarshal([]byte(raw), &names); err != nil {
+		return nil, fmt.Errorf("reminder %d: extra_channels: %w", id, err)
+	}
+	return names, nil
 }

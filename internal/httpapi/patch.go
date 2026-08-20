@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -44,7 +45,7 @@ func (s *Server) handlePatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	upd, errMessage, err := s.buildUpdate(r, fields, current)
+	upd, errMessage, err := s.buildUpdate(r.Context(), fields, current)
 	if err != nil {
 		s.log.Error("patch: build update", "error", err)
 		writeError(w, http.StatusInternalServerError, "")
@@ -55,7 +56,7 @@ func (s *Server) handlePatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rem, err := s.store.UpdateReminder(r.Context(), id, upd, time.Now().Unix())
+	rem, err := s.store.UpdateReminder(r.Context(), current, upd, time.Now().Unix())
 	if err != nil {
 		s.log.Error("patch: update reminder", "error", err)
 		writeError(w, http.StatusInternalServerError, "")
@@ -68,7 +69,7 @@ func (s *Server) handlePatch(w http.ResponseWriter, r *http.Request) {
 // buildUpdate consumes the known keys from fields and rejects what is
 // left, naming the lexically first leftover — Go randomises map
 // iteration, so "the first one" is chosen, not taken (§8.3).
-func (s *Server) buildUpdate(r *http.Request, fields map[string]json.RawMessage, current store.Reminder) (store.ReminderUpdate, string, error) {
+func (s *Server) buildUpdate(ctx context.Context, fields map[string]json.RawMessage, current store.Reminder) (store.ReminderUpdate, string, error) {
 	var upd store.ReminderUpdate
 
 	if raw, present := consume(fields, "text"); present {
@@ -118,7 +119,7 @@ func (s *Server) buildUpdate(r *http.Request, fields map[string]json.RawMessage,
 		}
 		// a name already stored on the row is carried, never re-checked —
 		// the orphan asymmetry (§8.3)
-		canonical, errMessage, err := s.canonicalChannels(r, names, current.ExtraChannels)
+		canonical, errMessage, err := s.canonicalChannels(ctx, names, current.ExtraChannels)
 		if err != nil || errMessage != "" {
 			return upd, errMessage, err
 		}

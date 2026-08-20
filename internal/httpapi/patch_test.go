@@ -41,18 +41,7 @@ func TestPatchValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := patch(t, h, id, tt.body)
-			if rec.Code != http.StatusBadRequest {
-				t.Fatalf("status = %d (%s), want 400", rec.Code, rec.Body.String())
-			}
-			var body struct {
-				Error string `json:"error"`
-			}
-			json.Unmarshal(rec.Body.Bytes(), &body)
-			for _, want := range tt.wantErr {
-				if !strings.Contains(body.Error, want) {
-					t.Errorf("error %q does not contain %q", body.Error, want)
-				}
-			}
+			assertBadRequest(t, rec, tt.wantErr...)
 		})
 	}
 

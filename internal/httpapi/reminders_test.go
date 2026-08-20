@@ -65,20 +65,7 @@ func TestCreateReminderValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := authedJSON(t, h, http.MethodPost, "/api/reminders", tt.body)
-			if rec.Code != http.StatusBadRequest {
-				t.Fatalf("status = %d (%s), want 400", rec.Code, rec.Body.String())
-			}
-			var body struct {
-				Error string `json:"error"`
-			}
-			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-				t.Fatalf("body %s is not the error shape: %v", rec.Body.String(), err)
-			}
-			for _, want := range tt.wantErr {
-				if !strings.Contains(body.Error, want) {
-					t.Errorf("error %q does not contain %q", body.Error, want)
-				}
-			}
+			assertBadRequest(t, rec, tt.wantErr...)
 		})
 	}
 

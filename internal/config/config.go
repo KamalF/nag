@@ -62,22 +62,19 @@ type Preset struct {
 // or invalid is an error naming the path — never overwritten with the
 // default (§5.3).
 func Load(path string) (cfg *Config, wroteDefault bool, err error) {
-	raw, err := os.ReadFile(path)
-	switch {
-	case err == nil:
-	case errors.Is(err, fs.ErrNotExist):
-		if werr := os.WriteFile(path, defaultTOML, 0o644); werr != nil {
-			return nil, false, fmt.Errorf("write default config to %s: %w", path, werr)
-		}
-		raw, wroteDefault = defaultTOML, true
-	default:
-		return nil, false, fmt.Errorf("read config %s: %w", path, err)
+	cfg, err = Check(path)
+	if err == nil || !errors.Is(err, fs.ErrNotExist) {
+		return cfg, false, err
 	}
-	cfg, err = parse(raw)
+	// genuinely absent — the only case that writes the default
+	if werr := os.WriteFile(path, defaultTOML, 0o644); werr != nil {
+		return nil, false, fmt.Errorf("write default config to %s: %w", path, werr)
+	}
+	cfg, err = parse(defaultTOML)
 	if err != nil {
-		return nil, wroteDefault, fmt.Errorf("config %s: %w", path, err)
+		return nil, true, fmt.Errorf("config %s: %w", path, err)
 	}
-	return cfg, wroteDefault, nil
+	return cfg, true, nil
 }
 
 // Check loads and validates the config exactly as boot does, except that an

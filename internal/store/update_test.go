@@ -4,6 +4,17 @@ import (
 	"testing"
 )
 
+// mustGet reads the pre-image UpdateReminder now takes — the row as the
+// caller just read it.
+func mustGet(t *testing.T, s *Store, id int64) Reminder {
+	t.Helper()
+	r, err := s.GetReminder(t.Context(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
 func setDeliveryError(t *testing.T, s *Store, id int64, msg string) {
 	t.Helper()
 	if _, err := s.db.Exec("UPDATE reminders SET delivery_error = ? WHERE id = ?", msg, id); err != nil {
@@ -26,7 +37,7 @@ func TestUpdateReTime(t *testing.T) {
 		setDeliveryError(t, s, id, "ntfy: timeout")
 
 		due := int64(5000)
-		got, err := s.UpdateReminder(t.Context(), id, ReminderUpdate{DueAt: &due}, 100)
+		got, err := s.UpdateReminder(t.Context(), mustGet(t, s, id), ReminderUpdate{DueAt: &due}, 100)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -41,7 +52,7 @@ func TestUpdateReTime(t *testing.T) {
 	t.Run("backdated re-time stamps both, exactly as on create", func(t *testing.T) {
 		id := insertRow(t, s, 9000, nil, nil, nil)
 		due := int64(50)
-		got, err := s.UpdateReminder(t.Context(), id, ReminderUpdate{DueAt: &due}, 100)
+		got, err := s.UpdateReminder(t.Context(), mustGet(t, s, id), ReminderUpdate{DueAt: &due}, 100)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -59,7 +70,7 @@ func TestUpdateChannelsClearRule(t *testing.T) {
 		setChannels(t, s, id, `["ntfy"]`)
 		setDeliveryError(t, s, id, "ntfy: timeout")
 
-		got, err := s.UpdateReminder(t.Context(), id,
+		got, err := s.UpdateReminder(t.Context(), mustGet(t, s, id),
 			ReminderUpdate{ExtraChannels: &[]string{"ntfy", "telegram"}}, 100)
 		if err != nil {
 			t.Fatal(err)
@@ -77,7 +88,7 @@ func TestUpdateChannelsClearRule(t *testing.T) {
 		setChannels(t, s, id, `["ntfy"]`)
 		setDeliveryError(t, s, id, "ntfy: timeout")
 
-		got, err := s.UpdateReminder(t.Context(), id,
+		got, err := s.UpdateReminder(t.Context(), mustGet(t, s, id),
 			ReminderUpdate{ExtraChannels: &[]string{"ntfy"}}, 100)
 		if err != nil {
 			t.Fatal(err)
@@ -92,7 +103,7 @@ func TestUpdateChannelsClearRule(t *testing.T) {
 		setChannels(t, s, id, `["ntfy"]`)
 		setDeliveryError(t, s, id, "ntfy: refused")
 
-		got, err := s.UpdateReminder(t.Context(), id,
+		got, err := s.UpdateReminder(t.Context(), mustGet(t, s, id),
 			ReminderUpdate{ExtraChannels: &[]string{}}, 100)
 		if err != nil {
 			t.Fatal(err)
@@ -107,7 +118,7 @@ func TestUpdateTextOnlyLeavesLifecycleAlone(t *testing.T) {
 	s := newStore(t)
 	id := insertRow(t, s, 10, ptr(50), ptr(55), ptr(60))
 	text := "new text"
-	got, err := s.UpdateReminder(t.Context(), id, ReminderUpdate{Text: &text}, 100)
+	got, err := s.UpdateReminder(t.Context(), mustGet(t, s, id), ReminderUpdate{Text: &text}, 100)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -9,7 +9,7 @@ func TestSweepMarkIdempotent(t *testing.T) {
 	s := newStore(t)
 	insertRow(t, s, 900, nil, nil, nil)
 
-	eligible, tooLate, err := s.SweepMark(t.Context(), 1000)
+	eligible, tooLate, err := s.SweepMark(t.Context(), 1000, 1800)
 	if err != nil || len(eligible) != 1 || len(tooLate) != 0 {
 		t.Fatalf("first mark: %d eligible, %d gated (err %v), want 1, 0", len(eligible), len(tooLate), err)
 	}
@@ -21,7 +21,7 @@ func TestSweepMarkIdempotent(t *testing.T) {
 		t.Errorf("pushed_at = %v, want NULL — the row waits for a digest", got.PushedAt)
 	}
 
-	eligible, tooLate, err = s.SweepMark(t.Context(), 1030)
+	eligible, tooLate, err = s.SweepMark(t.Context(), 1030, 1800)
 	if err != nil || len(eligible)+len(tooLate) != 0 {
 		t.Errorf("second mark returned rows — a marked row must never fire twice (§7.3)")
 	}
@@ -33,7 +33,7 @@ func TestSweepMarkSkipsBackdatedWrites(t *testing.T) {
 	if _, err := s.CreateReminder(t.Context(), "backdated", 500, nil, 1000); err != nil {
 		t.Fatal(err)
 	}
-	eligible, tooLate, err := s.SweepMark(t.Context(), 1030)
+	eligible, tooLate, err := s.SweepMark(t.Context(), 1030, 1800)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestSweepMarkTooLateGate(t *testing.T) {
 	onTimeID := insertRow(t, s, 2500, nil, nil, nil)   // 500 s overdue
 	boundaryID := insertRow(t, s, 1200, nil, nil, nil) // exactly 1800 s overdue: not gated (due_at < now-1800 gates)
 
-	eligible, tooLate, err := s.SweepMark(t.Context(), 3000)
+	eligible, tooLate, err := s.SweepMark(t.Context(), 3000, 1800)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,11 +74,11 @@ func TestSweepMarkLimit50(t *testing.T) {
 	for i := range 60 {
 		insertRow(t, s, int64(2000+i), nil, nil, nil)
 	}
-	eligible, _, err := s.SweepMark(t.Context(), 3000)
+	eligible, _, err := s.SweepMark(t.Context(), 3000, 1800)
 	if err != nil || len(eligible) != 50 {
 		t.Fatalf("first mark = %d rows (err %v), want the LIMIT 50", len(eligible), err)
 	}
-	eligible, _, err = s.SweepMark(t.Context(), 3030)
+	eligible, _, err = s.SweepMark(t.Context(), 3030, 1800)
 	if err != nil || len(eligible) != 10 {
 		t.Fatalf("second mark = %d rows (err %v), want the remaining 10", len(eligible), err)
 	}
@@ -93,7 +93,7 @@ func TestSweepMarkHandsOffTextAndChannels(t *testing.T) {
 	}
 	id, _ := res.LastInsertId()
 
-	eligible, _, err := s.SweepMark(t.Context(), 1000)
+	eligible, _, err := s.SweepMark(t.Context(), 1000, 1800)
 	if err != nil || len(eligible) != 1 {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestSweepMarkHandsOffTextAndChannels(t *testing.T) {
 func TestSweepMarkSkipsDoneRows(t *testing.T) {
 	s := newStore(t)
 	insertRow(t, s, 900, nil, nil, ptr(950))
-	eligible, tooLate, err := s.SweepMark(t.Context(), 1000)
+	eligible, tooLate, err := s.SweepMark(t.Context(), 1000, 1800)
 	if err != nil || len(eligible)+len(tooLate) != 0 {
 		t.Error("a done row reached phase 1")
 	}

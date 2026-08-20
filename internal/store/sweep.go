@@ -3,15 +3,8 @@ package store
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
-	"fmt"
 	"strings"
 )
-
-// tooLateSeconds is §7.3's gate: a row more than 30 minutes overdue when
-// the sweep first sees it appears in the list and produces no output. The
-// same 30 minutes is the push cooldown — one number the user can hold.
-const tooLateSeconds = 1800
 
 // MarkedRow is phase 1's hand-off: the tick fans out exactly what it just
 // marked and never re-queries, so the message text has to come out of
@@ -25,10 +18,12 @@ type MarkedRow struct {
 
 // SweepMark is §7.3 phase 1, one transaction, writes only: select up to 50
 // due unmarked rows, stamp notified_at = now on all of them, and stamp
-// pushed_at = now too on those past the too-late gate. It returns the
-// eligible rows for the later phases — gate-stamped rows excluded: the
-// gate means no output at all — and the gated ids for the INFO line.
-func (s *Store) SweepMark(ctx context.Context, now int64) (eligible []MarkedRow, tooLate []int64, err error) {
+// pushed_at = now too on those past the too-late gate — rows due more than
+// tooLateAfter seconds ago (the notify package owns that policy number).
+// It returns the eligible rows for the later phases — gate-stamped rows
+// excluded: the gate means no output at all — and the gated ids for the
+// INFO line.
+func (s *Store) SweepMark(ctx context.Context, now, tooLateAfter int64) (eligible []MarkedRow, tooLate []int64, err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, nil, err
@@ -51,9 +46,9 @@ func (s *Store) SweepMark(ctx context.Context, now int64) (eligible []MarkedRow,
 			return nil, nil, err
 		}
 		if channels != nil {
-			if err := json.Unmarshal([]byte(*channels), &r.ExtraChannels); err != nil {
+			if r.ExtraChannels, err = decodeChannels(r.ID, *channels); err != nil {
 				rows.Close()
-				return nil, nil, fmt.Errorf("reminder %d: extra_channels: %w", r.ID, err)
+				return nil, nil, err
 			}
 		}
 		all = append(all, r)
@@ -69,7 +64,7 @@ func (s *Store) SweepMark(ctx context.Context, now int64) (eligible []MarkedRow,
 	var allIDs []int64
 	for _, r := range all {
 		allIDs = append(allIDs, r.ID)
-		if r.DueAt < now-tooLateSeconds {
+		if r.DueAt < now-tooLateAfter {
 			tooLate = append(tooLate, r.ID)
 		} else {
 			eligible = append(eligible, r)

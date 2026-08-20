@@ -167,6 +167,26 @@ func TestRequestLogging(t *testing.T) {
 	}
 }
 
+// assertBadRequest asserts a 400 in the §8.3 shape whose message contains
+// every wanted substring.
+func assertBadRequest(t *testing.T, rec *httptest.ResponseRecorder, wants ...string) {
+	t.Helper()
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d (%s), want 400", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body %s is not the error shape: %v", rec.Body.String(), err)
+	}
+	for _, want := range wants {
+		if !strings.Contains(body.Error, want) {
+			t.Errorf("error %q does not contain %q", body.Error, want)
+		}
+	}
+}
+
 func assertErrorShape(t *testing.T, rec *httptest.ResponseRecorder, wantMessage string) {
 	t.Helper()
 	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {

@@ -136,24 +136,24 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     cookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
-	})
+	// clearing must match the issue-time attributes, so both go through
+	// sessionCookie
+	http.SetCookie(w, sessionCookie("", -1))
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) setSessionCookie(w http.ResponseWriter, now time.Time) {
-	http.SetCookie(w, &http.Cookie{
+	value := encodeSession(s.cookieKey, now.Add(cookieMaxAge))
+	http.SetCookie(w, sessionCookie(value, int(cookieMaxAge/time.Second)))
+}
+
+// sessionCookie is the one place the §8.1 attributes are written.
+func sessionCookie(value string, maxAge int) *http.Cookie {
+	return &http.Cookie{
 		Name:     cookieName,
-		Value:    encodeSession(s.cookieKey, now.Add(cookieMaxAge)),
+		Value:    value,
 		Path:     "/",
-		MaxAge:   int(cookieMaxAge / time.Second),
+		MaxAge:   maxAge,
 		HttpOnly: true,
 		// Unconditional: behind Caddy the app sees plain HTTP, so deriving
 		// this from r.TLS would silently ship a non-Secure cookie (§8.1).
@@ -161,5 +161,5 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, now time.Time) {
 		// Lax, not Strict — a notification click into a fresh tab must
 		// arrive authenticated.
 		SameSite: http.SameSiteLaxMode,
-	})
+	}
 }

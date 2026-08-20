@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -89,7 +90,7 @@ func (s *Server) handleCreateReminder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	channels, errMessage, err := s.canonicalChannels(r, body.ExtraChannels, nil)
+	channels, errMessage, err := s.canonicalChannels(r.Context(), body.ExtraChannels, nil)
 	if err != nil {
 		s.log.Error("create reminder: read channels", "error", err)
 		writeError(w, http.StatusInternalServerError, "")
@@ -226,11 +227,12 @@ func validateText(raw string) (text, errMessage string) {
 }
 
 // canonicalChannels validates and canonicalises extra_channels (§8.3):
-// max 16 names, de-duplicated and sorted before write so a set of names
-// has exactly one stored form. Every name must exist in channels — except
-// those in carried, the names already stored on the row (§8.3's PATCH
-// asymmetry: an orphan can be carried forward, never introduced).
-func (s *Server) canonicalChannels(r *http.Request, names []string, carried []string) ([]string, string, error) {
+// max 16 names, de-duplicated and sorted so a set of names has exactly one
+// stored form (the store re-asserts that invariant on write). Every name
+// must exist in channels — disabled included, existence is what matters —
+// except those in carried, the names already stored on the row (§8.3's
+// PATCH asymmetry: an orphan can be carried forward, never introduced).
+func (s *Server) canonicalChannels(ctx context.Context, names []string, carried []string) ([]string, string, error) {
 	if len(names) == 0 {
 		return nil, "", nil
 	}
@@ -239,9 +241,13 @@ func (s *Server) canonicalChannels(r *http.Request, names []string, carried []st
 	if len(names) > maxExtraChannels {
 		return nil, fmt.Sprintf("extra_channels has %d names, maximum is %d", len(names), maxExtraChannels), nil
 	}
-	known, err := s.store.ChannelNames(r.Context())
+	channels, err := s.store.ListChannels(ctx)
 	if err != nil {
 		return nil, "", err
+	}
+	known := make(map[string]struct{}, len(channels))
+	for _, c := range channels {
+		known[c.Name] = struct{}{}
 	}
 	for _, name := range names {
 		if _, exists := known[name]; !exists && !slices.Contains(carried, name) {

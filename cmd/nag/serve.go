@@ -6,7 +6,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/KamalF/nag/internal/config"
 	"github.com/KamalF/nag/internal/httpapi"
@@ -62,10 +61,10 @@ func runServe(stderr io.Writer) int {
 	server := &http.Server{
 		Addr:              env.addr,
 		Handler:           api.Handler(),
-		ReadHeaderTimeout: httpapi.ReadHeaderTimeout * time.Second,
-		ReadTimeout:       httpapi.ReadTimeout * time.Second,
-		WriteTimeout:      httpapi.WriteTimeout * time.Second,
-		IdleTimeout:       httpapi.IdleTimeout * time.Second,
+		ReadHeaderTimeout: httpapi.ReadHeaderTimeout,
+		ReadTimeout:       httpapi.ReadTimeout,
+		WriteTimeout:      httpapi.WriteTimeout,
+		IdleTimeout:       httpapi.IdleTimeout,
 	}
 	if err := server.ListenAndServe(); err != nil {
 		fmt.Fprintf(stderr, "FATAL: %v\n", err)
