@@ -57,6 +57,12 @@ func (s *Server) handlePatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rem, err := s.store.UpdateReminder(r.Context(), current, upd, time.Now().Unix())
+	if errors.Is(err, sql.ErrNoRows) {
+		// deleted between our read and the update — §8.3's unknown-{id} 404,
+		// not a 500
+		writeError(w, http.StatusNotFound, "no such reminder")
+		return
+	}
 	if err != nil {
 		s.log.Error("patch: update reminder", "error", err)
 		writeError(w, http.StatusInternalServerError, "")

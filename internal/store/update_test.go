@@ -1,6 +1,8 @@
 package store
 
 import (
+	"database/sql"
+	"errors"
 	"testing"
 )
 
@@ -112,6 +114,22 @@ func TestUpdateChannelsClearRule(t *testing.T) {
 			t.Errorf("got %+v, want empty channels and no delivery_error", got)
 		}
 	})
+}
+
+// A row deleted between the caller's read and the update surfaces as
+// ErrNoRows, which the PATCH handler maps to §8.3's unknown-{id} 404.
+func TestUpdateVanishedRowIsErrNoRows(t *testing.T) {
+	s := newStore(t)
+	id := insertRow(t, s, 10, nil, nil, nil)
+	current := mustGet(t, s, id)
+	if _, err := s.DeleteReminder(t.Context(), id); err != nil {
+		t.Fatal(err)
+	}
+	text := "too late"
+	_, err := s.UpdateReminder(t.Context(), current, ReminderUpdate{Text: &text}, 100)
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("err = %v, want ErrNoRows", err)
+	}
 }
 
 func TestUpdateTextOnlyLeavesLifecycleAlone(t *testing.T) {

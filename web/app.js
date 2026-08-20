@@ -10,17 +10,28 @@ const VISIBLE_POLL_MS = 45000; // §9.3
 let config = null;
 
 async function init() {
-  const res = await fetch('/api/state');
-  if (res.status === 401) {
-    showLogin();
+  let state;
+  try {
+    const res = await fetch('/api/state');
+    if (res.status === 401) {
+      showLogin();
+      return;
+    }
+    if (!res.ok) throw new Error('state ' + res.status);
+    state = await res.json();
+    const cfgRes = await fetch('/api/config');
+    if (!cfgRes.ok) throw new Error('config ' + cfgRes.status);
+    config = await cfgRes.json();
+  } catch {
+    // a boot that fails must retry, not brick — full toasts are M3
+    setTimeout(init, VISIBLE_POLL_MS);
     return;
   }
-  config = await (await fetch('/api/config')).json();
   renderChips();
   $('capture').hidden = false;
   $('overdue-zone').hidden = false;
   $('later-zone').hidden = false;
-  renderState(await res.json());
+  renderState(state);
   setInterval(() => {
     if (!document.hidden) refreshState();
   }, VISIBLE_POLL_MS);
@@ -32,7 +43,7 @@ function showLogin() {
   $('login').hidden = false;
   $('login-btn').addEventListener('click', submitToken);
   $('token').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') submitToken();
+    if (e.key === 'Enter' && !e.isComposing) submitToken();
   });
 }
 
@@ -64,8 +75,10 @@ function renderChips() {
   }
   $('text').addEventListener('input', updateChips);
   $('text').addEventListener('keydown', (e) => {
+    // isComposing: Enter that commits an IME composition is not a save
+    if (e.key !== 'Enter' || e.isComposing) return;
     // the client resolves default_preset — the server has no fallback (§8.3)
-    if (e.key === 'Enter') createReminder(config.default_preset);
+    createReminder(config.default_preset);
   });
 }
 
