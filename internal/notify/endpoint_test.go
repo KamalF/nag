@@ -4,7 +4,7 @@ import "testing"
 
 func TestTruncateEndpoint(t *testing.T) {
 	tests := map[string]string{
-		"https://push.example.net/send/AbCdEfGh12345678": "https://push.example.net…12345678",
+		"https://push.example.net/send/AbCdEfGh12345678": "https://push.example.net/…12345678",
 		"https://push.example.net/x":                     "https://push.example.net/x",
 		"://":                                            "unparseable-endpoint",
 	}

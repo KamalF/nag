@@ -13,7 +13,10 @@ func TruncateEndpoint(endpoint string) string {
 	}
 	path := u.Path
 	if len(path) > 8 {
-		path = "…" + path[len(path)-8:]
+		// the leading slash is kept: §7.5's printed example reads
+		// https://…mozilla.com/…f3Ka9tQ2, and this string is quoted
+		// verbatim in the push-test response
+		path = "/…" + path[len(path)-8:]
 	}
 	return u.Scheme + "://" + u.Host + path
 }

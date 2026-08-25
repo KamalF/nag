@@ -36,8 +36,8 @@ Legend: `[x]` landed · `[ ]` not started · `[~]` in progress · `[B]` blocked 
 | [x] | 18 | `flattenLinks` | `0d77603` |
 | [x] | 19 | Push subscription endpoints | `e77d80c` |
 | [x] | 20 | Push sender and response ladder | `49a716c` |
-| [x] | 21 | Sweep phase 2: digest and cooldown | |
-| [ ] | 22 | `POST /api/push/test` | |
+| [x] | 21 | Sweep phase 2: digest and cooldown | `ba55c2d` |
+| [x] | 22 | `POST /api/push/test` | |
 | [B] | 23 | Manifest and icons | needs the four icon PNGs (pre-flight design item) |
 | [ ] | 24 | Service worker | |
 | [ ] | 25 | Permission flow and unconditional re-post | |

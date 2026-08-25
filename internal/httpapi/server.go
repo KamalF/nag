@@ -3,6 +3,7 @@
 package httpapi
 
 import (
+	"context"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -10,8 +11,17 @@ import (
 	"time"
 
 	"github.com/KamalF/nag/internal/config"
+	"github.com/KamalF/nag/internal/notify"
 	"github.com/KamalF/nag/internal/store"
 )
+
+// pushSender is the §7.1 send-and-handle helper as §7.5 needs it: one
+// send, one verdict, the response ladder already applied. The sweep holds
+// the same helper (§7.3) — one copy of that ladder, two callers, and the
+// deadline is the only thing that differs between them.
+type pushSender interface {
+	SendTo(ctx context.Context, payload []byte, sub store.Subscription) notify.SendResult
+}
 
 // Server timeouts (§8.2) — the defaults are unlimited, and this process is
 // the one that must still be alive in a year. WriteTimeout is also the
@@ -39,6 +49,9 @@ type Server struct {
 	cookieKey   []byte
 	vapidPublic string
 
+	push       pushSender
+	pushBudget time.Duration
+
 	// configVersion lives in memory and restarts at 1 (§5.5); it moves
 	// only when M4's reload changes what the client can see.
 	configVersion int
@@ -53,6 +66,7 @@ type Options struct {
 	Web         fs.FS
 	Token       string
 	VAPIDPublic string
+	Push        pushSender
 	Log         *slog.Logger
 }
 
@@ -70,6 +84,8 @@ func New(o Options) *Server {
 		token:         o.Token,
 		cookieKey:     cookieKey(o.Token),
 		vapidPublic:   o.VAPIDPublic,
+		push:          o.Push,
+		pushBudget:    pushTestBudget,
 		configVersion: 1,
 		loginSleep:    250 * time.Millisecond,
 	}
@@ -104,6 +120,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("DELETE /api/reminders/{id}", s.handleDelete)
 	api.HandleFunc("POST /api/push/subscribe", s.handleSubscribe)
 	api.HandleFunc("POST /api/push/unsubscribe", s.handleUnsubscribe)
+	api.HandleFunc("POST /api/push/test", s.handlePushTest)
 	api.HandleFunc("/api/", s.handleAPINotFound)
 	mux.Handle("/api/", s.requireAuth(api))
 

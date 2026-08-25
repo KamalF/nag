@@ -17,6 +17,17 @@ func setLogID(r *http.Request, id string) {
 	}
 }
 
+type logAttrsKey struct{}
+
+// setLogAttrs adds handler-specific fields to the request's §10.4 line.
+// /api/push/test is the one endpoint with neither a reminder id nor a
+// single endpoint to truncate, so it names what it does know instead.
+func setLogAttrs(r *http.Request, attrs ...any) {
+	if p, ok := r.Context().Value(logAttrsKey{}).(*[]any); ok {
+		*p = append(*p, attrs...)
+	}
+}
+
 // logRequests applies §10.4: one INFO line per mutating request and one
 // per 4xx/5xx whatever the method — successful GETs are never logged, or
 // the 45-second poll would bury everything that matters. Never a token,
@@ -26,7 +37,9 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		var id string
-		r = r.WithContext(context.WithValue(r.Context(), logIDKey{}, &id))
+		var extra []any
+		ctx := context.WithValue(r.Context(), logIDKey{}, &id)
+		r = r.WithContext(context.WithValue(ctx, logAttrsKey{}, &extra))
 		next.ServeHTTP(rec, r)
 
 		mutating := r.Method != http.MethodGet && r.Method != http.MethodHead
@@ -42,6 +55,7 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 		if id != "" {
 			attrs = append(attrs, "id", id)
 		}
+		attrs = append(attrs, extra...)
 		s.log.Info("request", attrs...)
 	})
 }

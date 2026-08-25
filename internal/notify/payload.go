@@ -63,3 +63,15 @@ func truncateBytes(s string, limit int) string {
 	}
 	return s[:cut] + "…"
 }
+
+// testPushText is §7.5's fixed text, pinned so the worker draws the test
+// notification with no special case.
+const testPushText = "Nag test notification"
+
+// TestPayload is §7.5's payload: the n == 1 form with no id — no row
+// exists to point at, which is why §7.1 states id separately from n == 1 —
+// and due_at set to the server's now, so the body reads through the
+// ordinary formatter (§9.11) instead of needing a second shape in sw.js.
+func TestPayload(now int64) ([]byte, error) {
+	return json.Marshal(pushPayload{N: 1, DueAt: &now, Texts: []string{testPushText}})
+}

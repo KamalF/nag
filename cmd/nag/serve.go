@@ -37,12 +37,16 @@ func runServe(stderr io.Writer) int {
 	}
 	defer st.Close()
 
+	// one sender, two callers: the sweep's digest and POST /api/push/test
+	// (§7.5), so there is no second copy of the §7.1 ladder to drift
+	sender := notify.NewPushSender(st, logger, env.vapidPublic, env.vapidPrivate, env.vapidSubject)
 	api := httpapi.New(httpapi.Options{
 		Store:       st,
 		Config:      cfg,
 		Web:         web.Files,
 		Token:       env.token,
 		VAPIDPublic: env.vapidPublic,
+		Push:        sender,
 		Log:         logger,
 	})
 
@@ -66,7 +70,6 @@ func runServe(stderr io.Writer) int {
 	}
 
 	// context wiring for graceful shutdown is an M4 commit (§10.1)
-	sender := notify.NewPushSender(st, logger, env.vapidPublic, env.vapidPrivate, env.vapidSubject)
 	go notify.NewSweep(st, logger, sender).Run(context.Background())
 	server := &http.Server{
 		Addr:              env.addr,
