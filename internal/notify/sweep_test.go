@@ -42,7 +42,7 @@ func TestSweepRunsImmediatelyAtBoot(t *testing.T) {
 	}
 
 	var logs syncBuffer
-	s := NewSweep(st, slog.New(slog.NewTextHandler(&logs, nil)))
+	s := NewSweep(st, slog.New(slog.NewTextHandler(&logs, nil)), &fakeSender{})
 	s.interval = time.Hour // only the boot run can fire inside this test
 	s.now = func() time.Time { return time.Now().Add(time.Minute) }
 

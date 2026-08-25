@@ -79,6 +79,69 @@ func (s *Store) SweepMark(ctx context.Context, now, tooLateAfter int64) (eligibl
 	return eligible, tooLate, tx.Commit()
 }
 
+// HeldRow is one digest candidate: a row the sweep has handled that no
+// push has carried yet.
+type HeldRow struct {
+	ID    int64
+	Text  string
+	DueAt int64
+}
+
+// SweepCollectDigest is §7.3 phase 2's transaction: select the held set —
+// done_at IS NULL AND notified_at IS NOT NULL AND pushed_at IS NULL, in
+// due order — and stamp pushed_at = now on it. The UPDATE repeats the
+// SELECT's predicate instead of listing ids: there is no LIMIT here, so an
+// id list is unbounded, and MaxOpenConns(1) means the predicate cannot
+// have gained a row between the two statements (§7.3). The caller decides
+// whether the cooldown window is open before calling; the rows returned
+// have already left the held set for good.
+func (s *Store) SweepCollectDigest(ctx context.Context, now int64) ([]HeldRow, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	const heldPredicate = "done_at IS NULL AND notified_at IS NOT NULL AND pushed_at IS NULL"
+	rows, err := tx.QueryContext(ctx,
+		"SELECT id, text, due_at FROM reminders WHERE "+heldPredicate+" ORDER BY due_at, id")
+	if err != nil {
+		return nil, err
+	}
+	var held []HeldRow
+	for rows.Next() {
+		var r HeldRow
+		if err := rows.Scan(&r.ID, &r.Text, &r.DueAt); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		held = append(held, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(held) == 0 {
+		return nil, tx.Commit()
+	}
+	if _, err := tx.ExecContext(ctx,
+		"UPDATE reminders SET pushed_at = ? WHERE "+heldPredicate, now); err != nil {
+		return nil, err
+	}
+	return held, tx.Commit()
+}
+
+// HeldCount counts the rows waiting out the cooldown, for the §10.4
+// held-rows line — the line that tells a 20-minute silence apart from a
+// broken sweep.
+func (s *Store) HeldCount(ctx context.Context) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM reminders
+		WHERE done_at IS NULL AND notified_at IS NOT NULL AND pushed_at IS NULL`).Scan(&n)
+	return n, err
+}
+
 func stampByID(ctx context.Context, tx *sql.Tx, column string, now int64, ids []int64) error {
 	if len(ids) == 0 {
 		return nil

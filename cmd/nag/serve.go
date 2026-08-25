@@ -66,7 +66,8 @@ func runServe(stderr io.Writer) int {
 	}
 
 	// context wiring for graceful shutdown is an M4 commit (§10.1)
-	go notify.NewSweep(st, logger).Run(context.Background())
+	sender := notify.NewPushSender(st, logger, env.vapidPublic, env.vapidPrivate, env.vapidSubject)
+	go notify.NewSweep(st, logger, sender).Run(context.Background())
 	server := &http.Server{
 		Addr:              env.addr,
 		Handler:           api.Handler(),

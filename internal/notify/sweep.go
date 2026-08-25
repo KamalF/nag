@@ -15,18 +15,43 @@ const sweepInterval = 30 * time.Second
 // tooLateSeconds is §7.3's gate: a row more than 30 minutes overdue when
 // the sweep first sees it appears in the list and produces no output. The
 // same 30 minutes is the M2 push cooldown — one number the user can hold,
-// owned here because it is notification policy, not storage.
+// owned here because it is notification policy, not storage: *nothing more
+// than half an hour late produces a notification, and no more than one
+// notification per half hour.*
 const tooLateSeconds = 1800
+
+// perSendTimeout is §7.1's sweep-side deadline. Sends are sequential, so
+// three sleeping devices is a 30-second tick and the next one is skipped —
+// which the no-overlap rule already tolerates (§7.3).
+const perSendTimeout = 10 * time.Second
+
+// pusher is the sweep's view of the §7.1 sender: one send, one verdict.
+// The sweep ignores the verdict — nothing a send learns can change whether
+// a row has been handled (§7.3) — so this exists to let the phase-2 tests
+// run without a push service, not to widen the contract.
+type pusher interface {
+	SendTo(ctx context.Context, payload []byte, sub store.Subscription) SendResult
+}
 
 type Sweep struct {
 	store    *store.Store
 	log      *slog.Logger
+	sender   pusher
 	interval time.Duration
 	now      func() time.Time
+
+	// lastPushAt is the cooldown's only state, and it is deliberately in
+	// memory and not durable (§7.3). It starts at zero, so the tick that
+	// runs at boot always finds the window open: a restart opens the
+	// window early, which is at worst one extra notification and never a
+	// missed one. It is not derived from MAX(pushed_at), because phase 1
+	// stamps that column on rows nothing was ever sent about. Only the
+	// sweep goroutine touches it.
+	lastPushAt int64
 }
 
-func NewSweep(st *store.Store, log *slog.Logger) *Sweep {
-	return &Sweep{store: st, log: log, interval: sweepInterval, now: time.Now}
+func NewSweep(st *store.Store, log *slog.Logger, sender pusher) *Sweep {
+	return &Sweep{store: st, log: log, sender: sender, interval: sweepInterval, now: time.Now}
 }
 
 // Run loops until ctx is cancelled: once immediately at boot, then on the
@@ -47,8 +72,9 @@ func (s *Sweep) Run(ctx context.Context) {
 }
 
 // tick is one sweep pass. now is read once and used for every statement in
-// it (§7.3). M1 runs phase 1 and logs what it would have sent; phases 2–4
-// land with their milestones.
+// it (§7.3). Phases 1 and 2 run here; the fan-out and the purge land with
+// M4, and the order is load-bearing — every column that decides whether a
+// notification happens is committed before any socket is opened.
 func (s *Sweep) tick(ctx context.Context) {
 	now := s.now().Unix()
 
@@ -62,13 +88,91 @@ func (s *Sweep) tick(ctx context.Context) {
 		s.log.Info("sweep: marked too late, no notification", "id", id)
 	}
 	if len(eligible) > 0 {
-		// M1 placeholder for phases 2–3: ids only, never text (§10.4)
-		s.log.Info("sweep: marked (log-only, sending lands in M2)",
-			"count", len(eligible), "ids", markedIDs(eligible))
+		// ids only, never text (§10.4). The rows themselves are phase 3's
+		// hand-off, which lands with the fan-out (M4).
+		s.log.Info("sweep: marked", "count", len(eligible), "ids", markedIDs(eligible))
 	}
+
+	s.digest(ctx, now)
+}
+
+// digest is §7.3 phase 2: with the window open, take the whole held set,
+// stamp it, and send one push per subscription. A tick that finds the
+// window closed logs what it is holding instead — the line that tells a
+// 20-minute silence apart from a broken sweep (§10.4).
+func (s *Sweep) digest(ctx context.Context, now int64) {
+	if now-s.lastPushAt < tooLateSeconds {
+		s.logHeld(ctx, now)
+		return
+	}
+	held, err := s.store.SweepCollectDigest(ctx, now)
+	if err != nil {
+		s.log.Error("sweep: collect digest", "error", err)
+		return
+	}
+	if len(held) == 0 {
+		return
+	}
+	// The window is consumed whenever phase 2 selected rows, whatever the
+	// sends then do and even with zero subscriptions stored (§7.3): those
+	// rows have already left the held set and can never be re-selected,
+	// so a window held open on failure would have nothing left to carry.
+	s.lastPushAt = now
+
+	subs, err := s.store.ListSubscriptions(ctx)
+	if err != nil {
+		s.log.Error("sweep: list subscriptions", "error", err)
+		return
+	}
+	if len(subs) == 0 {
+		// without this line the first reminders after a fresh deploy
+		// vanish with no trace (§7.1)
+		s.log.Warn("no push subscriptions stored — the notification goes nowhere",
+			"count", len(held), "first_id", held[0].ID)
+		return
+	}
+	payload, err := buildDigestPayload(held)
+	if err != nil {
+		s.log.Error("sweep: build payload", "error", err)
+		return
+	}
+	for _, sub := range subs {
+		// one call per subscription, not per reminder: the digest is what
+		// keeps a backlog from becoming a burst (§7.3)
+		sendCtx, cancel := context.WithTimeout(ctx, perSendTimeout)
+		s.sender.SendTo(sendCtx, payload, sub)
+		cancel()
+	}
+	// the only record of which reminders a given notification was about,
+	// which is a question you will have — ids, never texts (§10.4)
+	s.log.Info("push sent", "n", len(held), "ids", heldIDs(held), "subscriptions", len(subs))
+}
+
+// logHeld writes the §10.4 held-rows line, one short line per tick that
+// actually holds something. A quiet instance stays quiet: with nothing
+// held there is no line.
+func (s *Sweep) logHeld(ctx context.Context, now int64) {
+	held, err := s.store.HeldCount(ctx)
+	if err != nil {
+		s.log.Error("sweep: held count", "error", err)
+		return
+	}
+	if held == 0 {
+		return
+	}
+	s.log.Info("sweep: holding rows until the cooldown window opens",
+		"held", held, "seconds_remaining", s.lastPushAt+tooLateSeconds-now)
 }
 
 func markedIDs(rows []store.MarkedRow) []int64 {
+	ids := make([]int64, len(rows))
+	for i, r := range rows {
+		ids[i] = r.ID
+	}
+	return ids
+}
+
+func heldIDs(rows []store.HeldRow) []int64 {
 	ids := make([]int64, len(rows))
 	for i, r := range rows {
 		ids[i] = r.ID

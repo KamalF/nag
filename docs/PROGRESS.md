@@ -1,7 +1,9 @@
 # Progress
 
 Where the [PLAN.md](../PLAN.md) implementation stands. One plan step = one commit, whose
-message ends with `(plan N)`. Update the line in the same commit that lands the step.
+message ends with `(plan N)`. Tick the box in the commit that lands the step; the hash is
+backfilled by the next one, since a commit cannot name its own. `git log --grep '(plan N)'`
+finds any of them directly.
 
 Legend: `[x]` landed · `[ ]` not started · `[~]` in progress · `[B]` blocked (reason given)
 
@@ -34,7 +36,7 @@ Legend: `[x]` landed · `[ ]` not started · `[~]` in progress · `[B]` blocked 
 | [x] | 18 | `flattenLinks` | `0d77603` |
 | [x] | 19 | Push subscription endpoints | `e77d80c` |
 | [x] | 20 | Push sender and response ladder | `49a716c` |
-| [~] | 21 | Sweep phase 2: digest and cooldown | |
+| [x] | 21 | Sweep phase 2: digest and cooldown | |
 | [ ] | 22 | `POST /api/push/test` | |
 | [B] | 23 | Manifest and icons | needs the four icon PNGs (pre-flight design item) |
 | [ ] | 24 | Service worker | |

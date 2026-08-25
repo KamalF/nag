@@ -112,3 +112,53 @@ func TestSweepMarkSkipsDoneRows(t *testing.T) {
 		t.Error("a done row reached phase 1")
 	}
 }
+
+// Phase 2 selects the held set in due order and stamps exactly it — the
+// predicate-not-id-list UPDATE must not reach a done row or an unmarked
+// one, and it must reach every held row however many there are (§7.3).
+func TestSweepCollectDigestStampsExactlyTheHeldSet(t *testing.T) {
+	s := newStore(t)
+	late := insertRow(t, s, 2000, ptr(int64(2100)), nil, nil)
+	early := insertRow(t, s, 1000, ptr(int64(2100)), nil, nil)
+	cleared := insertRow(t, s, 1500, ptr(int64(2100)), nil, ptr(int64(2200)))
+	unmarked := insertRow(t, s, 9000, nil, nil, nil)
+
+	held, err := s.SweepCollectDigest(t.Context(), 3000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(held) != 2 || held[0].ID != early || held[1].ID != late {
+		t.Fatalf("held = %v, want [%d %d] in due order", held, early, late)
+	}
+	for _, id := range []int64{early, late} {
+		got, _ := s.GetReminder(t.Context(), id)
+		if got.PushedAt == nil || *got.PushedAt != 3000 {
+			t.Errorf("id %d: pushed_at = %v, want 3000", id, got.PushedAt)
+		}
+	}
+	for _, id := range []int64{cleared, unmarked} {
+		got, _ := s.GetReminder(t.Context(), id)
+		if got.PushedAt != nil {
+			t.Errorf("id %d was stamped by the predicate UPDATE: pushed_at = %v", id, got.PushedAt)
+		}
+	}
+
+	// the rows have left the held set for good
+	again, err := s.SweepCollectDigest(t.Context(), 4000)
+	if err != nil || len(again) != 0 {
+		t.Errorf("second collect returned %d rows (err %v), want none", len(again), err)
+	}
+}
+
+func TestHeldCountCountsOnlyWaitingRows(t *testing.T) {
+	s := newStore(t)
+	insertRow(t, s, 1000, ptr(int64(1100)), nil, nil)              // held
+	insertRow(t, s, 1000, ptr(int64(1100)), ptr(int64(1100)), nil) // already pushed
+	insertRow(t, s, 1000, ptr(int64(1100)), nil, ptr(int64(1200))) // cleared while held
+	insertRow(t, s, 9000, nil, nil, nil)                           // not yet due
+
+	n, err := s.HeldCount(t.Context())
+	if err != nil || n != 1 {
+		t.Fatalf("held count = %d (err %v), want 1", n, err)
+	}
+}
