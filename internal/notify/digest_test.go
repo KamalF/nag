@@ -26,7 +26,7 @@ type fakeSender struct {
 	result   SendResult
 }
 
-func (f *fakeSender) SendTo(_ context.Context, payload []byte, sub store.Subscription) SendResult {
+func (f *fakeSender) SendTo(_ context.Context, _ time.Duration, payload []byte, sub store.Subscription) SendResult {
 	f.payloads = append(f.payloads, string(payload))
 	f.subs = append(f.subs, sub)
 	return f.result

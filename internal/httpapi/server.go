@@ -21,7 +21,7 @@ import (
 // the same helper (§7.3) — one copy of that ladder, two callers, and the
 // deadline is the only thing that differs between them.
 type pushSender interface {
-	SendTo(ctx context.Context, payload []byte, sub store.Subscription) notify.SendResult
+	SendTo(ctx context.Context, perSend time.Duration, payload []byte, sub store.Subscription) notify.SendResult
 }
 
 // Go's table has no entry for .webmanifest, so the file server falls back to

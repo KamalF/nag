@@ -38,13 +38,18 @@ type pushTestResult struct {
 // you are asking whether the transport works, and an endpoint that answers
 // "come back in twenty minutes" would be answering a different question.
 func (s *Server) handlePushTest(w http.ResponseWriter, r *http.Request) {
+	// Read before anything that can block. The budget is derived from
+	// WriteTimeout (§8.2), and a clock read taken after a query that can wait
+	// on the single connection (§4.3) starts the 12 seconds seconds into the
+	// request — which is the derivation broken quietly.
+	now := time.Now()
+
 	subs, err := s.store.ListSubscriptions(r.Context())
 	if err != nil {
 		s.log.Error("push test: list subscriptions", "error", err)
 		writeError(w, http.StatusInternalServerError, "")
 		return
 	}
-	now := time.Now()
 	payload, err := notify.TestPayload(now.Unix())
 	if err != nil {
 		s.log.Error("push test: build payload", "error", err)
@@ -69,11 +74,11 @@ func (s *Server) handlePushTest(w http.ResponseWriter, r *http.Request) {
 			results = append(results, pushTestResult{Endpoint: truncated, Error: &notAttempted})
 			continue
 		}
-		// A child deadline never outlives its parent, so this *is* §7.5's
-		// "smaller of 3 seconds and whatever is left of the budget".
-		sendCtx, cancelSend := context.WithTimeout(ctx, pushTestPerSend)
-		res := s.push.SendTo(sendCtx, payload, sub)
-		cancelSend()
+		// The send derives its own deadline from this one, so it really is
+		// §7.5's "smaller of 3 seconds and whatever is left of the budget" —
+		// and so is the row deletion a 404/410 triggers, which is why the
+		// budget bounds the handler rather than only its sends.
+		res := s.push.SendTo(ctx, pushTestPerSend, payload, sub)
 
 		attempted++
 		if res.Deleted {

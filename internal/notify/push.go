@@ -40,7 +40,8 @@ func NewPushSender(st *store.Store, log *slog.Logger, vapidPublic, vapidPrivate,
 	}
 }
 
-// deleteTimeout bounds the row deletion that outlives its send (below).
+// deleteTimeout bounds a deletion whose caller has no deadline of its own —
+// the sweep runs on a context that never expires (§7.3).
 const deleteTimeout = 5 * time.Second
 
 // SendResult is one attempt's outcome in §8.2's closed vocabulary:
@@ -58,12 +59,21 @@ type SendResult struct {
 // 404/410 delete the row; 401/403 delete only when the row's key differs
 // from the configured one (a subscription bound to a retired keypair can
 // never succeed again), and are an ERROR kept otherwise; anything else is
-// logged and kept. The caller's ctx carries the deadline — 10 s from the
-// sweep, min(3 s, remaining budget) from the push test — the only part of
-// a send that differs between the two callers. Endpoints are logged in
-// truncated form only (§10.4); success records nothing (§7.1).
-func (p *PushSender) SendTo(ctx context.Context, payload []byte, sub store.Subscription) SendResult {
-	resp, err := p.sendFn(ctx, payload, &webpush.Subscription{
+// logged and kept. Endpoints are logged in truncated form only (§10.4);
+// success records nothing (§7.1).
+//
+// The two deadlines are separate on purpose. perSend bounds this one send —
+// 10 s from the sweep, 3 s from the push test, the only part of a send that
+// differs between the two callers — while ctx carries whatever bounds the
+// caller as a whole, which for the push test is its 12-second budget (§7.5).
+// The row deletion below hangs off ctx rather than the send, so a 410 that
+// answers in the last millisecond of a send still gets acted on, and never
+// at the cost of a budget the caller has to answer within.
+func (p *PushSender) SendTo(ctx context.Context, perSend time.Duration, payload []byte, sub store.Subscription) SendResult {
+	sendCtx, cancelSend := context.WithTimeout(ctx, perSend)
+	defer cancelSend()
+
+	resp, err := p.sendFn(sendCtx, payload, &webpush.Subscription{
 		Endpoint: sub.Endpoint,
 		Keys:     webpush.Keys{P256dh: sub.P256dh, Auth: sub.Auth},
 	}, &webpush.Options{
@@ -124,11 +134,11 @@ func (p *PushSender) SendTo(ctx context.Context, payload []byte, sub store.Subsc
 // cancelled by that expiry would leave the row to fail on every sweep
 // forever, which is exactly what the ladder exists to stop (§7.1).
 func (p *PushSender) deleteSubscription(ctx context.Context, endpoint, truncated string, status int) bool {
-	// Detached, but not unbounded: WithoutCancel also drops the client
-	// disconnect and, once M4 wires it, the shutdown context, and a single
-	// pool connection (§4.3) is something another statement can be holding.
-	// A deadline of its own keeps the intent without the open-ended wait.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), deleteTimeout)
+	// ctx here is the caller's, not the send's, so the expiry of a send
+	// cannot cancel the write that acts on its answer. The extra bound keeps
+	// a caller that has no deadline of its own — the sweep — from waiting
+	// indefinitely on the single connection (§4.3).
+	ctx, cancel := context.WithTimeout(ctx, deleteTimeout)
 	defer cancel()
 	if err := p.store.DeleteSubscription(ctx, endpoint); err != nil {
 		p.log.Error("delete subscription", "endpoint", truncated, "error", err)

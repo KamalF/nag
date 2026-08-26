@@ -30,7 +30,7 @@ const perSendTimeout = 10 * time.Second
 // a row has been handled (§7.3) — so this exists to let the phase-2 tests
 // run without a push service, not to widen the contract.
 type pusher interface {
-	SendTo(ctx context.Context, payload []byte, sub store.Subscription) SendResult
+	SendTo(ctx context.Context, perSend time.Duration, payload []byte, sub store.Subscription) SendResult
 }
 
 type Sweep struct {
@@ -101,7 +101,13 @@ func (s *Sweep) tick(ctx context.Context) {
 // window closed logs what it is holding instead — the line that tells a
 // 20-minute silence apart from a broken sweep (§10.4).
 func (s *Sweep) digest(ctx context.Context, now int64) {
-	if now-s.lastPushAt < tooLateSeconds {
+	// The first half is the backward-clock guard: lastPushAt is in memory and
+	// nothing but a restart clears it, so after an NTP step or a snapshot
+	// restore a plain difference stays under the cooldown for the whole
+	// length of the jump — every reminder marked, held, and never pushed. An
+	// unrecognisable window counts as open, which fails in the direction
+	// §7.3 already chose for a restart: at worst one extra notification.
+	if now >= s.lastPushAt && now-s.lastPushAt < tooLateSeconds {
 		s.logHeld(ctx, now)
 		return
 	}
@@ -145,9 +151,7 @@ func (s *Sweep) digest(ctx context.Context, now int64) {
 	for _, sub := range subs {
 		// one call per subscription, not per reminder: the digest is what
 		// keeps a backlog from becoming a burst (§7.3)
-		sendCtx, cancel := context.WithTimeout(ctx, perSendTimeout)
-		s.sender.SendTo(sendCtx, payload, sub)
-		cancel()
+		s.sender.SendTo(ctx, perSendTimeout, payload, sub)
 	}
 	// the only record of which reminders a given notification was about,
 	// which is a question you will have — ids, never texts (§10.4)
