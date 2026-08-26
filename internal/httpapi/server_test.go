@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/KamalF/nag/internal/config"
+	"github.com/KamalF/nag/internal/notify"
 	"github.com/KamalF/nag/internal/store"
 	_ "modernc.org/sqlite"
 )
@@ -44,7 +45,11 @@ func testServerWithDB(t *testing.T, logs io.Writer) (*Server, string) {
 		Web:         web,
 		Token:       testToken,
 		VAPIDPublic: testVAPIDPublic,
-		Log:         slog.New(slog.NewTextHandler(logs, nil)),
+		// serve always wires a sender, so a nil one is a test-only shape;
+		// the default keeps POST /api/push/test from nil-panicking in a test
+		// that did not think about push at all
+		Push: &fakePush{results: []notify.SendResult{{Status: 201}}},
+		Log:  slog.New(slog.NewTextHandler(logs, nil)),
 	})
 	s.loginSleep = time.Millisecond // keep the §8.1 failure sleep out of test time
 	return s, dbPath

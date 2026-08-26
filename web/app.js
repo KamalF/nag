@@ -54,6 +54,7 @@ let pollTimer = null;
 // flash is re-applied to whichever row now carries the id.
 let flashId = null;
 let flashUntil = 0;
+let flashTimer = null;
 
 // §9.5: one feature-detect boolean, computed once, before any of the push
 // machinery runs. A Firefox private window, an older desktop Safari and any
@@ -221,26 +222,10 @@ async function createReminder(preset) {
 async function syncSubscription() {
   const registration = await swRegistration;
   if (!registration) return;
-  let sub;
   try {
-    sub = await registration.pushManager.getSubscription();
+    const sub = await registration.pushManager.getSubscription();
     if (!sub) return;
-
-    // Compare keys first, and post the key you compared. Re-posting a
-    // subscription still bound to a retired keypair heals nothing — the
-    // push service keeps rejecting it — and this is the client half of
-    // making a rotation recoverable (§7.1).
-    const bound = encodeKey(sub.options.applicationServerKey);
-    if (bound !== null && bound !== config.vapid_public) {
-      await sub.unsubscribe();
-      sub = await subscribeWith(registration, config.vapid_public);
-    }
-    // A null readback is not a mismatch: every browser new enough to reach
-    // this line populates options.applicationServerKey, and treating null
-    // as a mismatch would churn unsubscribe/subscribe on a *working*
-    // subscription on every page load — the one thing this re-post exists
-    // to prevent (§9.8).
-    await postSubscription(sub, config.vapid_public);
+    await postSubscription(await boundToCurrentKey(registration, sub), config.vapid_public);
   } catch (err) {
     // the slot below is the recovery path, and it needs the load to survive
     console.error('subscription re-post failed', err);
@@ -290,10 +275,19 @@ async function desiredSlot(pushSubscribed) {
   if (iosNeedsHomeScreen()) return 'ios';
   if (!pushAvailable) return 'unsupported';
   if (Notification.permission === 'denied') return 'denied';
-  const registration = await swRegistration;
-  const sub = registration ? await registration.pushManager.getSubscription() : null;
-  if (Notification.permission === 'granted' && sub && pushSubscribed) return 'absent';
-  return 'button';
+  try {
+    const registration = await swRegistration;
+    const sub = registration ? await registration.pushManager.getSubscription() : null;
+    if (Notification.permission === 'granted' && sub && pushSubscribed) return 'absent';
+    return 'button';
+  } catch {
+    // getSubscription rejects rather than resolving null where push is
+    // disabled by policy or its service is unreachable. Unhandled, it
+    // rejects a render pass every 45 s and leaves the slot frozen — no
+    // button, no line, nothing to act on — so it lands on the same quiet
+    // line as an unsupported browser (§9.5).
+    return 'unsupported';
+  }
 }
 
 // turnOnNotifications runs on the click, because that is the gesture the
@@ -305,7 +299,11 @@ async function turnOnNotifications() {
   try {
     if ((await Notification.requestPermission()) === 'granted') {
       const existing = await registration.pushManager.getSubscription();
-      const sub = existing ?? (await subscribeWith(registration, config.vapid_public));
+      // an existing subscription goes through the same key check as the
+      // re-post: posting one nobody compared is what poisons the row
+      const sub = existing
+        ? await boundToCurrentKey(registration, existing)
+        : await subscribeWith(registration, config.vapid_public);
       await postSubscription(sub, config.vapid_public);
     }
   } catch (err) {
@@ -314,6 +312,26 @@ async function turnOnNotifications() {
   // redraw either way: granted removes the slot, denied replaces it with the
   // quiet line
   refreshState();
+}
+
+// boundToCurrentKey is §9.8's "compare keys first, and post the key you
+// compared", and both entry points go through it. Posting a subscription
+// nobody examined under the configured key makes the row's vapid_public
+// equal to it by construction, which sends §7.1's 403 rung down its
+// "matching, so it is a bug" branch forever: the row is kept, an ERROR is
+// logged on every sweep, the boot mismatch WARNING is blinded, and the slot
+// reports that everything is fine.
+async function boundToCurrentKey(registration, sub) {
+  const bound = encodeKey(sub.options.applicationServerKey);
+  // A null readback is not a mismatch: every browser new enough to reach
+  // this line populates options.applicationServerKey, and treating null as a
+  // mismatch would churn unsubscribe/subscribe on a *working* subscription
+  // on every page load — the one thing this exists to prevent (§9.8).
+  if (bound === null || bound === config.vapid_public) return sub;
+  // re-posting a subscription still bound to a retired keypair heals
+  // nothing: the push service keeps rejecting it (§7.1)
+  await sub.unsubscribe();
+  return subscribeWith(registration, config.vapid_public);
 }
 
 function subscribeWith(registration, key) {
@@ -616,18 +634,32 @@ function consumeFocusParam() {
 // purged (§4.4), and both are ordinary: a notification is never the record
 // of anything (§7.6). Never fall back to flashing the first row.
 function flashRow(id) {
-  const row = rowElement(id);
-  if (!row) return;
+  // one flash at a time: an uncancelled timeout from a previous one would
+  // retire the id of the flash that replaced it, and leave two rows lit
+  clearTimeout(flashTimer);
+  clearFlash();
+
+  // armed before the row is looked up, because the render that will show it
+  // may not have happened yet — an aborted refresh resolves having rendered
+  // nothing (§9.3), and renderZone re-applies the flash when the row lands.
+  // A row that is genuinely in neither list simply never gets one, which is
+  // §9.5's rule.
   flashId = String(id);
   flashUntil = Date.now() + FLASH_MS;
+  flashTimer = setTimeout(clearFlash, FLASH_MS);
+
+  const row = rowElement(id);
+  if (!row) return;
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
   row.scrollIntoView({ block: 'center', behavior: still ? 'auto' : 'smooth' });
   applyFlash(row);
-  setTimeout(() => {
-    flashId = null;
-    const current = rowElement(id);
-    if (current) current.style.backgroundColor = '';
-  }, FLASH_MS);
+}
+
+function clearFlash() {
+  if (flashId === null) return;
+  const row = rowElement(flashId);
+  if (row) row.style.backgroundColor = '';
+  flashId = null;
 }
 
 function rowElement(id) {

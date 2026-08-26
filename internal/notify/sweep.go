@@ -105,6 +105,17 @@ func (s *Sweep) digest(ctx context.Context, now int64) {
 		s.logHeld(ctx, now)
 		return
 	}
+	// Read the subscriptions before the held set is consumed. The digest
+	// transaction stamps pushed_at across the whole held set and commits, and
+	// those rows can never be re-selected — so a read that fails after it
+	// would drop them for a reason this could have seen first. An empty list
+	// is not a failure and does not stop the phase: §7.6 wants the rows
+	// stamped and the window consumed even with zero subscriptions stored.
+	subs, err := s.store.ListSubscriptions(ctx)
+	if err != nil {
+		s.log.Error("sweep: list subscriptions", "error", err)
+		return
+	}
 	held, err := s.store.SweepCollectDigest(ctx, now)
 	if err != nil {
 		s.log.Error("sweep: collect digest", "error", err)
@@ -119,11 +130,6 @@ func (s *Sweep) digest(ctx context.Context, now int64) {
 	// so a window held open on failure would have nothing left to carry.
 	s.lastPushAt = now
 
-	subs, err := s.store.ListSubscriptions(ctx)
-	if err != nil {
-		s.log.Error("sweep: list subscriptions", "error", err)
-		return
-	}
 	if len(subs) == 0 {
 		// without this line the first reminders after a fresh deploy
 		// vanish with no trace (§7.1)
