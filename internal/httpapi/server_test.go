@@ -214,9 +214,7 @@ func assertErrorShape(t *testing.T, rec *httptest.ResponseRecorder, wantMessage 
 // §9.3's manifest is the reason Web Push works on an iPhone at all, and it
 // is the one embedded file whose extension Go's mime table does not know.
 func TestManifestContentType(t *testing.T) {
-	s := testServer(t, nil)
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/manifest.webmanifest", nil))
+	rec := get(t, testServer(t, nil).Handler(), "/manifest.webmanifest")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d, want 200", rec.Code)
