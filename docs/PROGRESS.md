@@ -29,7 +29,7 @@ Legend: `[x]` landed · `[ ]` not started · `[~]` in progress · `[B]` blocked 
 | [x] | 16 | Minimal unstyled UI | `8ecbf94` |
 | [x] | 17 | **M1 checkpoint** (no commit) | verified 2026-08-19 |
 
-## M2 — notifications
+## M2 — notifications (code complete; device pass outstanding)
 
 | | # | Step | Commit |
 |---|---|---|---|
@@ -42,9 +42,9 @@ Legend: `[x]` landed · `[ ]` not started · `[~]` in progress · `[B]` blocked 
 | [x] | 24 | Service worker | `eda1e09` |
 | [x] | 25 | Permission flow and unconditional re-post | `e2a4d42` |
 | [x] | 26 | Poll engine and page-side worker messages | `e3ee132` |
-| [x] | 27 | Badge | |
+| [x] | 27 | Badge | `c7dfe41` |
 | [B] | 28 | **Dev deployment on the VPS** (no commit) | needs the VPS, DNS, and physical devices |
-| [ ] | 29 | **M2 checkpoint** (no commit) | |
+| [~] | 29 | **M2 checkpoint** (no commit) | laptop half is testable now; devices wait on 28 |
 
 ## M3 — design
 
@@ -90,4 +90,4 @@ one-step-one-commit index.
 | `e29774a` | config: reject empty or `Local` timezone (§5.5) |
 | `0072687` | code-review findings — PATCH 404 on vanished row, boot resilience |
 | `daf5750` | this file |
-| — | `.webmanifest` served as `application/manifest+json` |
+| `4815e35` | `.webmanifest` served as `application/manifest+json` |
