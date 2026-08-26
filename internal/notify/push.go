@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"syscall"
+	"time"
 
 	"github.com/KamalF/nag/internal/store"
 	webpush "github.com/SherClockHolmes/webpush-go"
@@ -38,6 +39,9 @@ func NewPushSender(st *store.Store, log *slog.Logger, vapidPublic, vapidPrivate,
 		sendFn:       webpush.SendNotificationWithContext,
 	}
 }
+
+// deleteTimeout bounds the row deletion that outlives its send (below).
+const deleteTimeout = 5 * time.Second
 
 // SendResult is one attempt's outcome in §8.2's closed vocabulary:
 // Status 0 means the attempt produced no HTTP status at all (rendered as
@@ -120,7 +124,13 @@ func (p *PushSender) SendTo(ctx context.Context, payload []byte, sub store.Subsc
 // cancelled by that expiry would leave the row to fail on every sweep
 // forever, which is exactly what the ladder exists to stop (§7.1).
 func (p *PushSender) deleteSubscription(ctx context.Context, endpoint, truncated string, status int) bool {
-	if err := p.store.DeleteSubscription(context.WithoutCancel(ctx), endpoint); err != nil {
+	// Detached, but not unbounded: WithoutCancel also drops the client
+	// disconnect and, once M4 wires it, the shutdown context, and a single
+	// pool connection (§4.3) is something another statement can be holding.
+	// A deadline of its own keeps the intent without the open-ended wait.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), deleteTimeout)
+	defer cancel()
+	if err := p.store.DeleteSubscription(ctx, endpoint); err != nil {
 		p.log.Error("delete subscription", "endpoint", truncated, "error", err)
 		return false
 	}

@@ -14,6 +14,12 @@ const VISIBLE_POLL_MS = 45000;
 const HIDDEN_POLL_MS = 300000;
 const FLASH_MS = 2400;
 
+// How long a click's request waits for the render that shows its row. It is
+// not the highlight's own duration: the row may take several passes to
+// arrive, and a highlight that had already expired by then would make a slow
+// connection look identical to a reminder that no longer exists.
+const FLASH_WAIT_MS = 15000;
+
 // setTimeout truncates its delay to a signed 32-bit integer, so anything
 // past ~24.8 days wraps and fires immediately (§9.3).
 const MAX_TIMER_MS = 2000000000;
@@ -46,16 +52,16 @@ let stateAbort = null;
 let dueTimer = null;
 let pollTimer = null;
 
-// flashId and flashUntil outlive the element they highlight. renderZone
-// rebuilds every row on each render and a 304 re-renders routinely (§9.3),
-// so a highlight held only on the <li> is wiped by the round trip that
-// follows a notification click — exactly when it is being watched. M3's
-// keyed render (commit 33) makes the rebuild unnecessary; until then the
-// flash is re-applied to whichever row now carries the id.
-let flashId = null;
-let flashUntil = 0;
+// A flash is a request, not a style. renderZone rebuilds every row on every
+// render and a 304 re-renders routinely (§9.3), so the request has to outlive
+// the element — and the row a click names may not have been drawn yet at all,
+// since an aborted refresh resolves having rendered nothing. pendingFlash is
+// the request waiting for its row; litRow is what is currently painted, so a
+// rebuild can restore it and clearFlash can find it. M3's keyed render
+// (commit 33) is what eventually makes the rebuild unnecessary.
+let pendingFlash = null;
+let litRow = null;
 let flashTimer = null;
-let flashScrolled = false;
 
 // §9.5: one feature-detect boolean, computed once, before any of the push
 // machinery runs. A Firefox private window, an older desktop Safari and any
@@ -143,7 +149,13 @@ async function init() {
 async function registerWorker() {
   if (!pushSupported) return null;
   try {
-    return await navigator.serviceWorker.register('/sw.js');
+    const registration = await navigator.serviceWorker.register('/sw.js');
+    // init retries itself on a failed boot, and a deploy fails the state
+    // fetch and the worker script fetch together — so this has to be able to
+    // recover, or one unlucky first load leaves the slot reading "this
+    // browser cannot show notifications" on a browser that can (§9.8)
+    pushAvailable = true;
+    return registration;
   } catch (err) {
     // a syntax error in sw.js, a hard-refresh race, a browser with workers
     // disabled by policy: nothing to retry and nothing the user can do. It
@@ -540,6 +552,7 @@ function renderState(state) {
   // driven by the same render pass as the lists, which is what keeps all
   // three outputs correct after a 304 too (§9.3)
   setBadge(state.overdue_count);
+  applyPendingFlash();
   armDueTimer(state);
   if (subscriptionSynced) renderNotifySlot(state.push_subscribed);
 }
@@ -660,53 +673,50 @@ function consumeFocusParam() {
 // purged (§4.4), and both are ordinary: a notification is never the record
 // of anything (§7.6). Never fall back to flashing the first row.
 function flashRow(id) {
-  // one flash at a time: an uncancelled timeout from a previous one would
-  // retire the id of the flash that replaced it, and leave two rows lit
-  clearTimeout(flashTimer);
   clearFlash();
-
-  // armed before the row is looked up, because the render that will show it
-  // may not have happened yet — an aborted refresh resolves having rendered
-  // nothing (§9.3), and renderZone re-applies the flash when the row lands.
-  // A row that is genuinely in neither list simply never gets one, which is
-  // §9.5's rule.
-  flashId = String(id);
-  flashScrolled = false;
-  armFlashWindow();
-
-  const row = rowElement(id);
-  if (!row) return;
-  applyFlash(row);
+  pendingFlash = { id: String(id), deadline: Date.now() + FLASH_WAIT_MS };
+  applyPendingFlash();
 }
 
-// armFlashWindow starts the 2.4 s from the moment the row is actually shown.
-// A row the click names may not be in the DOM yet — an aborted refresh
-// resolves having rendered nothing (§9.3) — and a highlight measured from
-// the click would then last whatever was left of it.
-function armFlashWindow() {
-  clearTimeout(flashTimer);
-  flashUntil = Date.now() + FLASH_MS;
+// applyPendingFlash runs at the end of every render, which is the only place
+// it can: scrollIntoView does nothing to an element that is not in the
+// document yet, so lighting a row from inside renderZone would paint it and
+// never move the page. A request whose row is in neither list simply waits,
+// and expires — which is §9.5's "nothing happens" for a reminder that was
+// cleared elsewhere, and a second chance for one whose render lost a race.
+function applyPendingFlash() {
+  if (!pendingFlash) return;
+  if (Date.now() > pendingFlash.deadline) {
+    pendingFlash = null;
+    return;
+  }
+  const row = rowElement(pendingFlash.id);
+  if (!row) return;
+
+  litRow = pendingFlash.id;
+  pendingFlash = null;
+  paintFlash(row);
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  row.scrollIntoView({ block: 'center', behavior: still ? 'auto' : 'smooth' });
+  // the highlight is measured from the moment the row is on screen, not from
+  // the click that asked for it
   flashTimer = setTimeout(clearFlash, FLASH_MS);
 }
 
-// applyFlash also owns the scroll, because both belong to the first render
-// that actually shows the row (§9.5 asks for the scroll and the highlight
-// together). CSSOM rather than a style attribute, which style-src 'self'
-// forbids and §9.7 makes a rule; M3 replaces the provisional colour with the
-// token (commit 38).
-function applyFlash(row) {
-  row.style.backgroundColor = FLASH_FILL;
-  if (flashScrolled) return;
-  flashScrolled = true;
-  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  row.scrollIntoView({ block: 'center', behavior: still ? 'auto' : 'smooth' });
+function clearFlash() {
+  clearTimeout(flashTimer);
+  pendingFlash = null;
+  if (litRow === null) return;
+  const row = rowElement(litRow);
+  if (row) row.style.backgroundColor = '';
+  litRow = null;
 }
 
-function clearFlash() {
-  if (flashId === null) return;
-  const row = rowElement(flashId);
-  if (row) row.style.backgroundColor = '';
-  flashId = null;
+// CSSOM rather than a style attribute, which style-src 'self' forbids and
+// §9.7 makes a rule; M3 replaces the provisional colour with the token
+// (commit 38).
+function paintFlash(row) {
+  row.style.backgroundColor = FLASH_FILL;
 }
 
 function rowElement(id) {
@@ -726,12 +736,10 @@ function renderZone(ul, rows) {
     });
     const li = document.createElement('li');
     li.dataset.id = r.id; // what §9.5's focus-reminder finds the row by
-    if (flashId === String(r.id) && Date.now() < flashUntil) {
-      if (!flashScrolled) armFlashWindow(); // the row is only now on screen
-      applyFlash(li);
-    }
     li.append(label, ' ', clear);
     ul.append(li);
+    // a rebuild inside the 2.4 s must not drop the highlight it is showing
+    if (litRow === String(r.id)) paintFlash(li);
   }
 }
 
