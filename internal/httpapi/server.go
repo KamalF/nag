@@ -6,6 +6,7 @@ import (
 	"context"
 	"io/fs"
 	"log/slog"
+	"mime"
 	"net/http"
 	"sync"
 	"time"
@@ -21,6 +22,15 @@ import (
 // deadline is the only thing that differs between them.
 type pushSender interface {
 	SendTo(ctx context.Context, payload []byte, sub store.Subscription) notify.SendResult
+}
+
+// Go's table has no entry for .webmanifest, so the file server falls back to
+// sniffing and answers text/plain — which browsers accept today and which
+// X-Content-Type-Options: nosniff (§10.2) makes a real risk tomorrow. The
+// manifest is the reason iPhone push works at all (§9.3), so it is not a file
+// to leave on a guess.
+func init() {
+	mime.AddExtensionType(".webmanifest", "application/manifest+json")
 }
 
 // Server timeouts (§8.2) — the defaults are unlimited, and this process is

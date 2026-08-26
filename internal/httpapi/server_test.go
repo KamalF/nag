@@ -35,7 +35,8 @@ func testServerWithDB(t *testing.T, logs io.Writer) (*Server, string) {
 		logs = io.Discard
 	}
 	web := fstest.MapFS{
-		"index.html": &fstest.MapFile{Data: []byte("<h1>test index</h1>")},
+		"index.html":           &fstest.MapFile{Data: []byte("<h1>test index</h1>")},
+		"manifest.webmanifest": &fstest.MapFile{Data: []byte(`{"name":"Nag"}`)},
 	}
 	s := New(Options{
 		Store:       st,
@@ -202,5 +203,20 @@ func assertErrorShape(t *testing.T, rec *httptest.ResponseRecorder, wantMessage 
 	}
 	if wantMessage != "" && msg != wantMessage {
 		t.Errorf("error = %q, want %q", msg, wantMessage)
+	}
+}
+
+// §9.3's manifest is the reason Web Push works on an iPhone at all, and it
+// is the one embedded file whose extension Go's mime table does not know.
+func TestManifestContentType(t *testing.T) {
+	s := testServer(t, nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/manifest.webmanifest", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, want 200", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/manifest+json" {
+		t.Errorf("Content-Type = %q, want application/manifest+json", got)
 	}
 }
