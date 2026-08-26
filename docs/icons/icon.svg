@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>Nag app icon</title>
+  <!-- Horizon palette (§9.1) and the app's own rule drawn once: three list
+       rows, upcoming ones receding into quiet and faint ink, the overdue one
+       carrying full contrast in late-amber. Source for 192.png and 512.png. -->
+  <rect width="512" height="512" rx="96" fill="#212A2E"/>
+  <circle cx="136" cy="152" r="30" fill="#E0A33E"/>
+  <rect x="188" y="132" width="208" height="40" rx="20" fill="#E0A33E"/>
+  <circle cx="136" cy="256" r="18" fill="#8DA0A7"/>
+  <rect x="188" y="238" width="208" height="36" rx="18" fill="#8DA0A7"/>
+  <circle cx="136" cy="360" r="18" fill="#5D7078"/>
+  <rect x="188" y="342" width="148" height="36" rx="18" fill="#5D7078"/>
+</svg>

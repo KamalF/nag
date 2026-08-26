@@ -37,8 +37,8 @@ Legend: `[x]` landed · `[ ]` not started · `[~]` in progress · `[B]` blocked 
 | [x] | 19 | Push subscription endpoints | `e77d80c` |
 | [x] | 20 | Push sender and response ladder | `49a716c` |
 | [x] | 21 | Sweep phase 2: digest and cooldown | `ba55c2d` |
-| [x] | 22 | `POST /api/push/test` | |
-| [B] | 23 | Manifest and icons | needs the four icon PNGs (pre-flight design item) |
+| [x] | 22 | `POST /api/push/test` | `6ca8121` |
+| [x] | 23 | Manifest and icons | |
 | [ ] | 24 | Service worker | |
 | [ ] | 25 | Permission flow and unconditional re-post | |
 | [ ] | 26 | Poll engine and page-side worker messages | |

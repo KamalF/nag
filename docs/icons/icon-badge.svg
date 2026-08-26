@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <title>Nag favicon and notification badge</title>
+  <!-- No plate, and that is deliberate. This is the source for 32.png, which
+       is both the favicon base the count dot is drawn onto (§9.3) and the
+       notification badge (§9.5) — and Android renders that badge from the
+       alpha channel alone, so a full-bleed square would arrive in the status
+       bar as a solid block. A transparent mark also sits correctly on a light
+       and on a dark tab strip, which no themed colour could. -->
+  <circle cx="7" cy="8.5" r="3" fill="#E0A33E"/>
+  <rect x="13" y="6" width="15" height="5" rx="2.5" fill="#E0A33E"/>
+  <circle cx="7" cy="16.5" r="2.2" fill="#8DA0A7"/>
+  <rect x="13" y="14" width="15" height="5" rx="2.5" fill="#8DA0A7"/>
+  <circle cx="7" cy="24.5" r="2.2" fill="#5D7078"/>
+  <rect x="13" y="22" width="10" height="5" rx="2.5" fill="#5D7078"/>
+</svg>
