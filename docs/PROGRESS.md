@@ -39,8 +39,8 @@ Legend: `[x]` landed · `[ ]` not started · `[~]` in progress · `[B]` blocked 
 | [x] | 21 | Sweep phase 2: digest and cooldown | `ba55c2d` |
 | [x] | 22 | `POST /api/push/test` | `6ca8121` |
 | [x] | 23 | Manifest and icons | `b60d6aa` |
-| [x] | 24 | Service worker | |
-| [ ] | 25 | Permission flow and unconditional re-post | |
+| [x] | 24 | Service worker | `eda1e09` |
+| [x] | 25 | Permission flow and unconditional re-post | |
 | [ ] | 26 | Poll engine and page-side worker messages | |
 | [ ] | 27 | Badge | |
 | [B] | 28 | **Dev deployment on the VPS** (no commit) | needs the VPS, DNS, and physical devices |
