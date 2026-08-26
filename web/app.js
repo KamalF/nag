@@ -5,9 +5,34 @@
 
 const $ = (id) => document.getElementById(id);
 
-const VISIBLE_POLL_MS = 45000; // §9.3
+// §9.3's three cadences and the flash. 45 s is for the tab in front of you;
+// 5 minutes is what keeps a pinned tab's favicon honest without polling on
+// behalf of a machine nobody is using — suspending a hidden tab entirely
+// would break Goal 4 outright, since a tab you are reading the favicon of is
+// hidden by definition.
+const VISIBLE_POLL_MS = 45000;
+const HIDDEN_POLL_MS = 300000;
+const FLASH_MS = 2400;
+
+// setTimeout truncates its delay to a signed 32-bit integer, so anything
+// past ~24.8 days wraps and fires immediately (§9.3).
+const MAX_TIMER_MS = 2000000000;
 
 let config = null;
+
+// The poll's state. stateETag and lastState are a pair: the 304 path
+// re-renders from the list already in memory, so an ETag stored without the
+// body it describes would outlive the wrong render (§9.3).
+let stateETag = null;
+let lastState = null;
+
+// clockOffsetMs is the server's clock minus this device's. now() is pinned
+// to seconds, matching every timestamp the API sends (§8.2).
+let clockOffsetMs = 0;
+
+let stateAbort = null;
+let dueTimer = null;
+let pollTimer = null;
 
 // §9.5: one feature-detect boolean, computed once, before any of the push
 // machinery runs. A Firefox private window, an older desktop Safari and any
@@ -48,6 +73,9 @@ async function init() {
     }
     if (!res.ok) throw new Error('state ' + res.status);
     state = await res.json();
+    stateETag = res.headers.get('ETag');
+    lastState = state;
+    syncClock(res, state);
     const cfgRes = await fetch('/api/config');
     if (!cfgRes.ok) throw new Error('config ' + cfgRes.status);
     config = await cfgRes.json();
@@ -61,9 +89,12 @@ async function init() {
   $('overdue-zone').hidden = false;
   $('later-zone').hidden = false;
   renderState(state);
-  setInterval(() => {
-    if (!document.hidden) refreshState();
-  }, VISIBLE_POLL_MS);
+  armPoll();
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  if (pushSupported) {
+    navigator.serviceWorker.addEventListener('message', (event) => handleWorkerMessage(event.data));
+  }
+  consumeFocusParam();
 
   await syncSubscription();
   subscriptionSynced = true;
@@ -314,20 +345,153 @@ function encodeKey(buffer) {
 
 // --- the two zones ---
 
+// refreshState is the only reader of /api/state, and every trigger goes
+// through it: the two cadences, visibilitychange, the due timer, a worker
+// message, and every successful mutation. Those overlap by construction — a
+// mutation's refetch lands on top of a poll routinely — and nothing orders
+// two responses to the same endpoint, so one AbortController makes the
+// newest request the only one that can write anything. An aborted fetch
+// updates nothing at all: not the list, not the badge, not the clock offset,
+// and not the stored ETag (§9.3).
 async function refreshState() {
-  const res = await fetch('/api/state');
+  stateAbort?.abort();
+  const controller = new AbortController();
+  stateAbort = controller;
+
+  let res;
+  try {
+    res = await fetch('/api/state', {
+      signal: controller.signal,
+      // the ETag lives in a variable here, so a stale response overwriting
+      // it would outlive the wrong render entirely (§9.3)
+      headers: stateETag ? { 'If-None-Match': stateETag } : {},
+    });
+  } catch {
+    return; // aborted by a newer request, or offline: the next trigger tries again
+  }
+  if (controller !== stateAbort) return;
   if (res.status === 401) {
     location.reload();
     return;
   }
-  if (res.ok) renderState(await res.json());
+  if (res.status === 304) {
+    // The ETag excludes server_time so the steady-state poll is cheap (§8.2),
+    // which makes this the common case: no body, while every time string on
+    // screen has nevertheless moved. Returning early here would freeze them
+    // until the data happens to change, which on a quiet afternoon is hours.
+    syncClock(res, null);
+    if (lastState) renderState(lastState);
+    return;
+  }
+  if (!res.ok) return;
+
+  const body = await res.json();
+  if (controller !== stateAbort) return;
+  stateETag = res.headers.get('ETag');
+  lastState = body;
+  syncClock(res, body);
+  renderState(body);
+}
+
+// syncClock prefers the body's server_time and falls back to the Date
+// header, which is all a 304 carries (§9.3).
+function syncClock(res, state) {
+  const serverMs = state ? state.server_time * 1000 : Date.parse(res.headers.get('Date'));
+  if (!Number.isNaN(serverMs) && serverMs) clockOffsetMs = serverMs - Date.now();
+}
+
+// now() is the skew-corrected clock every time string reads (§9.11), pinned
+// to seconds so it compares directly against due_at.
+function now() {
+  return Math.floor((Date.now() + clockOffsetMs) / 1000);
+}
+
+// armPoll switches cadence rather than suspending: see the constants above.
+function armPoll() {
+  clearInterval(pollTimer);
+  pollTimer = setInterval(refreshState, document.hidden ? HIDDEN_POLL_MS : VISIBLE_POLL_MS);
+}
+
+function onVisibilityChange() {
+  armPoll();
+  if (!document.hidden) refreshState();
+}
+
+// armDueTimer is the one-shot timer of §9.3, re-armed on every render from
+// the first row of `later` — the list is server-sorted (§8.2). The
+// overdue/later split is server-computed and never recomputed here, so
+// without it a row that comes due sits reading "now" for up to 45 seconds
+// while the badge disagrees with it. It is armed regardless of visibility:
+// browsers throttle background timers to roughly one a minute, which
+// degrades it into a slightly-late poll rather than a missed one.
+function armDueTimer(state) {
+  clearTimeout(dueTimer);
+  const next = state.later[0];
+  if (!next) return;
+  // Without the clamp, one reminder six months out fires the timer at once,
+  // polls, re-arms from the same first element and fires again — a tight
+  // loop against the server for as long as the tab is open (§9.3).
+  const delay = Math.min((next.due_at - now()) * 1000, MAX_TIMER_MS);
+  dueTimer = setTimeout(refreshState, Math.max(delay, 0));
 }
 
 function renderState(state) {
   $('overdue-count').textContent = state.overdue_count;
   renderZone($('overdue'), state.overdue);
   renderZone($('later'), state.later);
+  armDueTimer(state);
   if (subscriptionSynced) renderNotifySlot(state.push_subscribed);
+}
+
+// --- messages from the worker (§9.5) ---
+
+// The page half of §9.5's switch. state-changed arrives on a tab nobody is
+// looking at — it is what puts a firing on the favicon immediately rather
+// than up to five minutes later — so it refreshes and nothing else:
+// scrolling or flashing would move the page under whatever you return to.
+async function handleWorkerMessage(message) {
+  if (!message) return;
+  if (message.type === 'state-changed') {
+    refreshState();
+    return;
+  }
+  if (message.type === 'focus-reminder') {
+    await refreshState();
+    flashRow(message.id);
+  }
+}
+
+// consumeFocusParam handles the other path: the id travels in the URL when
+// the worker had no client to talk to, because postMessage to a window
+// openWindow just returned is a race it always loses (§9.5). It is treated
+// as exactly the same message, and the URL is cleaned immediately so a
+// refresh does not re-flash a row you dealt with an hour ago and the address
+// never becomes something you might bookmark.
+function consumeFocusParam() {
+  const id = new URLSearchParams(location.search).get('focus');
+  if (id === null) return;
+  history.replaceState({}, '', '/');
+  handleWorkerMessage({ type: 'focus-reminder', id });
+}
+
+// flashRow scrolls to a row and highlights it for ~2.4 s. If the id is in
+// neither list after the refresh, the app is focused and nothing else
+// happens — no scroll, no flash, no toast, no error. The row was cleared on
+// another device while the notification sat in the tray, or cleared here and
+// purged (§4.4), and both are ordinary: a notification is never the record
+// of anything (§7.6). Never fall back to flashing the first row.
+function flashRow(id) {
+  const row = document.querySelector(`li[data-id="${CSS.escape(String(id))}"]`);
+  if (!row) return;
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  row.scrollIntoView({ block: 'center', behavior: still ? 'auto' : 'smooth' });
+  // CSSOM rather than a style attribute, which style-src 'self' forbids and
+  // §9.7 makes a rule; M3 replaces the provisional colour with the token
+  // (commit 38).
+  row.style.backgroundColor = '#E0A33E';
+  setTimeout(() => {
+    row.style.backgroundColor = '';
+  }, FLASH_MS);
 }
 
 function renderZone(ul, rows) {
@@ -342,6 +506,7 @@ function renderZone(ul, rows) {
       refreshState();
     });
     const li = document.createElement('li');
+    li.dataset.id = r.id; // what §9.5's focus-reminder finds the row by
     li.append(label, ' ', clear);
     ul.append(li);
   }
