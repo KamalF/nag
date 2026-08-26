@@ -165,7 +165,7 @@ async function resubscribe() {
       applicationServerKey: base64UrlToBytes(key),
     });
     const json = sub.toJSON();
-    await fetch('/api/push/subscribe', {
+    const res = await fetch('/api/push/subscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -176,6 +176,11 @@ async function resubscribe() {
         application_server_key: key,
       }),
     });
+    // §9.5 says do nothing on failure and let the page-load re-post heal it,
+    // but silence here is indistinguishable from a rotation that worked: the
+    // stale row keeps failing until a 404/410 retires it, and this line is
+    // the only thing that would ever explain that.
+    if (!res.ok) console.error('pushsubscriptionchange: subscribe post rejected', res.status);
   } catch (err) {
     console.error('pushsubscriptionchange: re-subscribe failed', err);
   }

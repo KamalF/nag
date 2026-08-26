@@ -55,6 +55,7 @@ let pollTimer = null;
 let flashId = null;
 let flashUntil = 0;
 let flashTimer = null;
+let flashScrolled = false;
 
 // §9.5: one feature-detect boolean, computed once, before any of the push
 // machinery runs. A Firefox private window, an older desktop Safari and any
@@ -72,6 +73,14 @@ let pushAvailable = pushSupported;
 // wherever the registration is needed. Never call register a second time to
 // "get" it (§9.5).
 let swRegistration = null;
+
+// repostFailed remembers this load's re-post outcome. push_subscribed is
+// instance-wide (§8.2), so on a laptop whose row the server dropped and
+// whose re-post then failed, the flag still reads true because the phone is
+// subscribed — and the slot would report that everything is fine while this
+// device is deaf. That is the outcome §9.8's re-post exists to prevent, so
+// its own result is the signal.
+let repostFailed = false;
 
 // §9.8: the slot's condition reads push_subscribed, so drawing it before the
 // unconditional re-post has resolved would flash "Turn on notifications" on
@@ -226,8 +235,10 @@ async function syncSubscription() {
     const sub = await registration.pushManager.getSubscription();
     if (!sub) return;
     await postSubscription(await boundToCurrentKey(registration, sub), config.vapid_public);
+    repostFailed = false;
   } catch (err) {
-    // the slot below is the recovery path, and it needs the load to survive
+    // the slot is the recovery path, and it needs the load to survive
+    repostFailed = true;
     console.error('subscription re-post failed', err);
   }
 }
@@ -278,7 +289,9 @@ async function desiredSlot(pushSubscribed) {
   try {
     const registration = await swRegistration;
     const sub = registration ? await registration.pushManager.getSubscription() : null;
-    if (Notification.permission === 'granted' && sub && pushSubscribed) return 'absent';
+    if (Notification.permission === 'granted' && sub && pushSubscribed && !repostFailed) {
+      return 'absent';
+    }
     return 'button';
   } catch {
     // getSubscription rejects rather than resolving null where push is
@@ -305,8 +318,10 @@ async function turnOnNotifications() {
         ? await boundToCurrentKey(registration, existing)
         : await subscribeWith(registration, config.vapid_public);
       await postSubscription(sub, config.vapid_public);
+      repostFailed = false;
     }
   } catch (err) {
+    repostFailed = true;
     console.error('subscribe failed', err);
   }
   // redraw either way: granted removes the slot, denied replaces it with the
@@ -334,7 +349,13 @@ async function boundToCurrentKey(registration, sub) {
   return subscribeWith(registration, config.vapid_public);
 }
 
-function subscribeWith(registration, key) {
+async function subscribeWith(registration, key) {
+  // register() resolves as soon as the registration exists, but subscribe()
+  // rejects with InvalidStateError while the worker is still installing —
+  // which is exactly the first-ever visit, the one where the button is
+  // showing and pressing it is the whole intent. `ready` waits for the
+  // active worker and registers nothing (§9.5).
+  await navigator.serviceWorker.ready;
   // applicationServerKey is bytes, not the string (§9.8)
   return registration.pushManager.subscribe({
     userVisibleOnly: true,
@@ -342,9 +363,13 @@ function subscribeWith(registration, key) {
   });
 }
 
+// postSubscription throws on any non-2xx. fetch resolves for a 400 or a
+// 500, so an unchecked call cannot tell a stored subscription from a
+// rejected one — and §8.2 answers 400 on every shape check and 500 on a
+// store error, all of which mean this device is not subscribed.
 async function postSubscription(sub, key) {
   const json = sub.toJSON();
-  await fetch('/api/push/subscribe', {
+  const res = await fetch('/api/push/subscribe', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -355,6 +380,7 @@ async function postSubscription(sub, key) {
       application_server_key: key,
     }),
   });
+  if (!res.ok) throw new Error('subscribe ' + res.status);
 }
 
 // iOS exposes the Push API only to a Home-Screen install, and every iOS
@@ -645,14 +671,35 @@ function flashRow(id) {
   // A row that is genuinely in neither list simply never gets one, which is
   // §9.5's rule.
   flashId = String(id);
-  flashUntil = Date.now() + FLASH_MS;
-  flashTimer = setTimeout(clearFlash, FLASH_MS);
+  flashScrolled = false;
+  armFlashWindow();
 
   const row = rowElement(id);
   if (!row) return;
+  applyFlash(row);
+}
+
+// armFlashWindow starts the 2.4 s from the moment the row is actually shown.
+// A row the click names may not be in the DOM yet — an aborted refresh
+// resolves having rendered nothing (§9.3) — and a highlight measured from
+// the click would then last whatever was left of it.
+function armFlashWindow() {
+  clearTimeout(flashTimer);
+  flashUntil = Date.now() + FLASH_MS;
+  flashTimer = setTimeout(clearFlash, FLASH_MS);
+}
+
+// applyFlash also owns the scroll, because both belong to the first render
+// that actually shows the row (§9.5 asks for the scroll and the highlight
+// together). CSSOM rather than a style attribute, which style-src 'self'
+// forbids and §9.7 makes a rule; M3 replaces the provisional colour with the
+// token (commit 38).
+function applyFlash(row) {
+  row.style.backgroundColor = FLASH_FILL;
+  if (flashScrolled) return;
+  flashScrolled = true;
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
   row.scrollIntoView({ block: 'center', behavior: still ? 'auto' : 'smooth' });
-  applyFlash(row);
 }
 
 function clearFlash() {
@@ -664,13 +711,6 @@ function clearFlash() {
 
 function rowElement(id) {
   return document.querySelector(`li[data-id="${CSS.escape(String(id))}"]`);
-}
-
-// CSSOM rather than a style attribute, which style-src 'self' forbids and
-// §9.7 makes a rule; M3 replaces the provisional colour with the token
-// (commit 38).
-function applyFlash(row) {
-  row.style.backgroundColor = FLASH_FILL;
 }
 
 function renderZone(ul, rows) {
@@ -686,7 +726,10 @@ function renderZone(ul, rows) {
     });
     const li = document.createElement('li');
     li.dataset.id = r.id; // what §9.5's focus-reminder finds the row by
-    if (flashId === String(r.id) && Date.now() < flashUntil) applyFlash(li);
+    if (flashId === String(r.id) && Date.now() < flashUntil) {
+      if (!flashScrolled) armFlashWindow(); // the row is only now on screen
+      applyFlash(li);
+    }
     li.append(label, ' ', clear);
     ul.append(li);
   }
