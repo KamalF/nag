@@ -87,18 +87,23 @@ type HeldRow struct {
 	DueAt int64
 }
 
-// SweepCollectDigest is §7.3 phase 2's transaction: select the held set —
-// done_at IS NULL AND notified_at IS NOT NULL AND pushed_at IS NULL, in
-// due order — and stamp pushed_at = now on it. The UPDATE repeats the
-// SELECT's predicate instead of listing ids: there is no LIMIT here, so an
-// id list is unbounded, and MaxOpenConns(1) means the predicate cannot
-// have gained a row between the two statements (§7.3). The caller decides
-// whether the cooldown window is open before calling; the rows returned
-// have already left the held set for good.
-func (s *Store) SweepCollectDigest(ctx context.Context, now int64) ([]HeldRow, error) {
+// SweepCollectDigest is §7.3 phase 2's transaction: take the held set —
+// done_at IS NULL AND notified_at IS NOT NULL AND pushed_at IS NULL, in due
+// order — stamp pushed_at = now on all of it, and split it by age.
+// sendable is what the digest may still notify about; tooLate names the rows
+// it may not. Both halves are stamped, which is the point: a row that leaves
+// the held set must never be selectable again at a greater age later, and
+// the notify package owns the policy number that divides them.
+//
+// The UPDATE repeats the SELECT's predicate instead of listing ids: there is
+// no LIMIT here, so an id list is unbounded, and MaxOpenConns(1) means the
+// predicate cannot have gained a row between the two statements (§7.3). It
+// deliberately carries no age condition — the split decides what is sent,
+// never what is stamped.
+func (s *Store) SweepCollectDigest(ctx context.Context, now, maxLateness int64) (sendable []HeldRow, tooLate []int64, err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer tx.Rollback()
 
@@ -106,29 +111,34 @@ func (s *Store) SweepCollectDigest(ctx context.Context, now int64) ([]HeldRow, e
 	rows, err := tx.QueryContext(ctx,
 		"SELECT id, text, due_at FROM reminders WHERE "+heldPredicate+" ORDER BY due_at, id")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	var held []HeldRow
+	var any bool
 	for rows.Next() {
 		var r HeldRow
 		if err := rows.Scan(&r.ID, &r.Text, &r.DueAt); err != nil {
 			rows.Close()
-			return nil, err
+			return nil, nil, err
 		}
-		held = append(held, r)
+		any = true
+		if r.DueAt < now-maxLateness {
+			tooLate = append(tooLate, r.ID)
+		} else {
+			sendable = append(sendable, r)
+		}
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if len(held) == 0 {
-		return nil, tx.Commit()
+	if !any {
+		return nil, nil, tx.Commit()
 	}
 	if _, err := tx.ExecContext(ctx,
 		"UPDATE reminders SET pushed_at = ? WHERE "+heldPredicate, now); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return held, tx.Commit()
+	return sendable, tooLate, tx.Commit()
 }
 
 // HeldCount counts the rows waiting out the cooldown, for the §10.4

@@ -489,3 +489,75 @@ func TestMixedTickDigestsOnlyTheRowsInsideTheGate(t *testing.T) {
 		}
 	}
 }
+
+// The row the bound exists for: a reminder marked on time, held by a closed
+// window, and still held when the server comes back from a long outage. The
+// phase-1 gate cannot see it — it was fresh when it was marked — so phase 2
+// is the only place that can refuse it. It ends up exactly where the gate
+// would have put it: stamped, in the list, and silent.
+func TestHeldRowStrandedByAnOutageIsSilent(t *testing.T) {
+	f := newFixture(t)
+	f.subscribe("https://push.example/aaaaaaaa")
+	f.create("opener", 0)
+	f.tickAt(0) // consumes the window
+	stranded := f.create("held when the lights went out", 60)
+	f.tickAt(70) // marked on time, then held
+
+	// the server is down for two days; the boot tick finds the window open
+	f.tickAt(2 * 86400)
+
+	if n := len(f.sender.payloads); n != 1 {
+		t.Fatalf("%d pushes, want only the opener — a two-day-old row was notified about", n)
+	}
+	logs := f.logs.String()
+	if !strings.Contains(logs, "held too long, no notification") ||
+		!strings.Contains(logs, fmt.Sprintf("id=%d", stranded.ID)) {
+		t.Errorf("no held-too-long line for id=%d: %q", stranded.ID, logs)
+	}
+}
+
+// And it costs nothing that follows: refusing to send consumes no window, so
+// a reminder coming due right after the restart pings on time.
+func TestAStrandedHeldRowLeavesTheWindowOpen(t *testing.T) {
+	f := newFixture(t)
+	f.subscribe("https://push.example/aaaaaaaa")
+	f.create("opener", 0)
+	f.tickAt(0)
+	f.create("held when the lights went out", 60)
+	f.tickAt(70)
+
+	f.tickAt(2 * 86400) // the stranded row is stamped, nothing is sent
+	f.create("back", 2*86400+30)
+	f.tickAt(2*86400 + 40) // a fresh row, on a window that was never consumed
+
+	sent := f.sent()
+	if len(sent) != 2 || sent[1].N != 1 || sent[1].Texts[0] != "back" {
+		t.Fatalf("want the fresh row pushed on time, got %+v", sent)
+	}
+}
+
+// The compound case the bound must not break, and the reason it is 3600
+// rather than 1800: phase 1's LIMIT 50 leaves rows for a later tick, which
+// marks them nearly 1800 s late — and the digest that carries them is behind
+// by nearly a full window on top of that, because the tick before it
+// consumed one. That is ~3445 s here, comfortably the worst case §7.6
+// produces, and it still has to arrive.
+func TestRowsMarkedLateAndHeldAFullWindowStillArrive(t *testing.T) {
+	f := newFixture(t)
+	f.subscribe("https://push.example/aaaaaaaa")
+	for i := range 60 {
+		f.create(fmt.Sprintf("backlog %d", i), int64(i))
+	}
+
+	f.tickAt(1700) // the server comes back: 50 marked, all inside the gate, digested
+	f.tickAt(1730) // the last ten, ~1700 s late at mark, held by the window
+	f.tickAt(3500) // the window reopens: they are now ~3445 s late
+
+	sent := f.sent()
+	if len(sent) != 2 || sent[0].N != 50 || sent[1].N != 10 {
+		t.Fatalf("want n=50 then n=10, got %+v", sent)
+	}
+	if strings.Contains(f.logs.String(), "held too long") {
+		t.Error("the bound refused rows that the two 30-minute constants allow")
+	}
+}

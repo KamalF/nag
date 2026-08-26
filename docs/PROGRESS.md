@@ -101,3 +101,5 @@ one-step-one-commit index.
 | `5dd2965` | code review round 3 — a rejected subscribe POST was silent |
 | `227883b` | code review round 4 — flash restructured, `pushAvailable` recovers |
 | `5fccb27` | code review round 5 — the push test's budget bounds the whole handler |
+| `2fa758b` | this file: the M2 review loop |
+| — | phase 2's lateness bound (§7.3, §7.6) — closes the review's open spec question |

@@ -123,9 +123,12 @@ func TestSweepCollectDigestStampsExactlyTheHeldSet(t *testing.T) {
 	cleared := insertRow(t, s, 1500, ptr(int64(2100)), nil, ptr(int64(2200)))
 	unmarked := insertRow(t, s, 9000, nil, nil, nil)
 
-	held, err := s.SweepCollectDigest(t.Context(), 3000)
+	held, tooLate, err := s.SweepCollectDigest(t.Context(), 3000, 3600)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(tooLate) != 0 {
+		t.Fatalf("tooLate = %v, want none — both rows are inside the bound", tooLate)
 	}
 	if len(held) != 2 || held[0].ID != early || held[1].ID != late {
 		t.Fatalf("held = %v, want [%d %d] in due order", held, early, late)
@@ -144,7 +147,7 @@ func TestSweepCollectDigestStampsExactlyTheHeldSet(t *testing.T) {
 	}
 
 	// the rows have left the held set for good
-	again, err := s.SweepCollectDigest(t.Context(), 4000)
+	again, _, err := s.SweepCollectDigest(t.Context(), 4000, 3600)
 	if err != nil || len(again) != 0 {
 		t.Errorf("second collect returned %d rows (err %v), want none", len(again), err)
 	}
@@ -160,5 +163,33 @@ func TestHeldCountCountsOnlyWaitingRows(t *testing.T) {
 	n, err := s.HeldCount(t.Context())
 	if err != nil || n != 1 {
 		t.Fatalf("held count = %d (err %v), want 1", n, err)
+	}
+}
+
+// The age split decides what is sent, never what is stamped: a row too late
+// to notify about still leaves the held set, or the next tick would find it
+// again at an age phase 2 has already refused (§7.3).
+func TestSweepCollectDigestStampsTheRowsItRefusesToSend(t *testing.T) {
+	s := newStore(t)
+	stranded := insertRow(t, s, 1000, ptr(int64(1100)), nil, nil) // 9000 s late at now=10000
+	fresh := insertRow(t, s, 9500, ptr(int64(9600)), nil, nil)    // 500 s late
+	boundary := insertRow(t, s, 6400, ptr(int64(6500)), nil, nil) // exactly 3600 s late: kept
+
+	held, tooLate, err := s.SweepCollectDigest(t.Context(), 10000, 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tooLate) != 1 || tooLate[0] != stranded {
+		t.Fatalf("tooLate = %v, want [%d]", tooLate, stranded)
+	}
+	if len(held) != 2 || held[0].ID != boundary || held[1].ID != fresh {
+		t.Fatalf("held = %v, want [%d %d] in due order — the boundary row is inside the bound",
+			held, boundary, fresh)
+	}
+	for _, id := range []int64{stranded, fresh, boundary} {
+		got, _ := s.GetReminder(t.Context(), id)
+		if got.PushedAt == nil || *got.PushedAt != 10000 {
+			t.Errorf("id %d: pushed_at = %v, want 10000 — every held row is stamped", id, got.PushedAt)
+		}
 	}
 }

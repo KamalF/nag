@@ -20,6 +20,20 @@ const sweepInterval = 30 * time.Second
 // notification per half hour.*
 const tooLateSeconds = 1800
 
+// maxHeldLatenessSeconds bounds how late a held row may be when the digest
+// finally carries it. The phase-1 gate cannot do this on its own: it runs at
+// mark time, and a row that passes it is then held for up to a full cooldown
+// window — and, after an outage, for however long the server was down (§7.3).
+//
+// One hour is the arithmetic of the two 30-minute constants rather than a
+// new number to remember: a row marked at the gate's boundary is already
+// 1800 s late and may then wait a whole 1800 s window, which is exactly what
+// §7.6's 60-row backlog row produces. Anything past that was not batched by
+// the cooldown, it was stranded by an outage — and the promise the two
+// constants make together is that such a row appears in the list and says
+// nothing.
+const maxHeldLatenessSeconds = tooLateSeconds * 2
+
 // perSendTimeout is §7.1's sweep-side deadline. Sends are sequential, so
 // three sleeping devices is a 30-second tick and the next one is skipped —
 // which the no-overlap rule already tolerates (§7.3).
@@ -122,12 +136,19 @@ func (s *Sweep) digest(ctx context.Context, now int64) {
 		s.log.Error("sweep: list subscriptions", "error", err)
 		return
 	}
-	held, err := s.store.SweepCollectDigest(ctx, now)
+	held, tooLate, err := s.store.SweepCollectDigest(ctx, now, maxHeldLatenessSeconds)
 	if err != nil {
 		s.log.Error("sweep: collect digest", "error", err)
 		return
 	}
+	for _, id := range tooLate {
+		// the same outcome the phase-1 gate produces, reached the other way:
+		// stamped, in the list, and silent (§7.3)
+		s.log.Info("sweep: held too long, no notification", "id", id)
+	}
 	if len(held) == 0 {
+		// nothing was sent, so the window is untouched — exactly as on a tick
+		// where the phase-1 gate stamped every candidate (§7.6)
 		return
 	}
 	// The window is consumed whenever phase 2 selected rows, whatever the
