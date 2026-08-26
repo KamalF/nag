@@ -191,3 +191,26 @@ func TestSendToOptionsAndLogging(t *testing.T) {
 		t.Errorf("truncated endpoint form missing: %q", line)
 	}
 }
+
+// §7.1's delete is the one write that cannot be skipped: the response is the
+// only thing that ever knows the row is dead. It must therefore survive the
+// send deadline expiring — §7.5 gives a send 3 seconds, and a 410 answered
+// at 2.99 s would otherwise leave the row failing on every sweep forever —
+// and it must report what actually happened, since §7.5's `deleted` field
+// says what the call did.
+func TestDeleteSurvivesAnExpiredSendContext(t *testing.T) {
+	p, st, _ := pushFixture(t, configuredKey)
+	p.sendFn = respondWith(http.StatusGone)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel() // the deadline is gone by the time the ladder runs
+
+	got := p.SendTo(ctx, []byte("{}"), theSubscription(t, st))
+
+	if !got.Deleted {
+		t.Errorf("Deleted = false on a 410, want true")
+	}
+	if n := subscriptionCount(t, st); n != 0 {
+		t.Errorf("%d subscriptions left, want the dead row gone", n)
+	}
+}

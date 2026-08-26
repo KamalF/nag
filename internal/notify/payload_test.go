@@ -78,7 +78,8 @@ func TestPayloadTruncatesOnlyTheMultiForm(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, text := range p.Texts {
-		if !strings.HasSuffix(text, "…") || len(text) > maxTextBytes+len("…") {
+		// the marker is inside the budget, not added to it
+		if !strings.HasSuffix(text, "…") || len(text) > maxTextBytes {
 			t.Errorf("entry not cut to %d bytes with an ellipsis: %d bytes, %q", maxTextBytes, len(text), text)
 		}
 	}
@@ -92,7 +93,7 @@ func TestPayloadTruncatesOnARuneBoundary(t *testing.T) {
 	if !utf8.ValidString(got) {
 		t.Fatalf("truncation split a rune: %q", got)
 	}
-	if len(got) > maxTextBytes+len("…") {
+	if len(got) > maxTextBytes {
 		t.Errorf("truncation overran the budget: %d bytes", len(got))
 	}
 }

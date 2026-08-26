@@ -16,6 +16,7 @@ import (
 const (
 	maxTexts     = 3
 	maxTextBytes = 120
+	ellipsis     = "…"
 )
 
 // pushPayload is the §7.1 wire form, and the two pointers are the whole
@@ -48,20 +49,21 @@ func buildDigestPayload(held []store.HeldRow) ([]byte, error) {
 	return json.Marshal(p)
 }
 
-// truncateBytes cuts s to at most limit bytes on a rune boundary and marks
-// the cut with an ellipsis. It counts bytes rather than runes because the
-// payload ceiling is a byte budget, and it walks back to a boundary
-// because a half-written rune renders as a replacement character on the
-// device.
+// truncateBytes cuts s so the result — ellipsis included — is at most limit
+// bytes, on a rune boundary. It counts bytes rather than runes because the
+// payload ceiling is a byte budget, and the marker is inside that budget
+// rather than added on top of it because what §7.1 caps is the entry that
+// goes on the wire. It walks back to a boundary because a half-written rune
+// renders as a replacement character on the device.
 func truncateBytes(s string, limit int) string {
 	if len(s) <= limit {
 		return s
 	}
-	cut := limit
+	cut := limit - len(ellipsis)
 	for cut > 0 && !utf8.RuneStart(s[cut]) {
 		cut--
 	}
-	return s[:cut] + "…"
+	return s[:cut] + ellipsis
 }
 
 // testPushText is §7.5's fixed text, pinned so the worker draws the test

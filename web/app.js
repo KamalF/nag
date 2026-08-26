@@ -25,6 +25,7 @@ const MAX_TIMER_MS = 2000000000;
 // from a constant for the same class of reason — reading document.title
 // would compound the prefix into "(3) (2) Nag" on the second call.
 const BADGE_FILL = '#E0A33E';
+const FLASH_FILL = '#E0A33E';
 const BADGE_INK = '#212A2E';
 const BASE_TITLE = 'Nag';
 const PLAIN_FAVICON = '/icons/32.png';
@@ -44,6 +45,15 @@ let clockOffsetMs = 0;
 let stateAbort = null;
 let dueTimer = null;
 let pollTimer = null;
+
+// flashId and flashUntil outlive the element they highlight. renderZone
+// rebuilds every row on each render and a 304 re-renders routinely (§9.3),
+// so a highlight held only on the <li> is wiped by the round trip that
+// follows a notification click — exactly when it is being watched. M3's
+// keyed render (commit 33) makes the rebuild unnecessary; until then the
+// flash is re-applied to whichever row now carries the id.
+let flashId = null;
+let flashUntil = 0;
 
 // §9.5: one feature-detect boolean, computed once, before any of the push
 // machinery runs. A Firefox private window, an older desktop Safari and any
@@ -238,38 +248,52 @@ async function syncSubscription() {
 }
 
 // renderNotifySlot draws §9.2's slot, whose steady state is absent: no
-// permanent settings furniture. The conditions are §9.8's, in the order of
-// what each can explain — a browser that cannot do this at all, an iPhone
-// that needs installing first, a permission the user has blocked, and only
-// then the button.
+// permanent settings furniture. It runs on every render, so it rebuilds only
+// when the answer actually changed — otherwise the button is destroyed and
+// re-created every 45 seconds, which drops the focus of a keyboard user and
+// swallows a click that lands mid-await, on the one control designed to be
+// invisible when things work.
+let slotGeneration = 0;
+let slotShowing = null;
+
 async function renderNotifySlot(pushSubscribed) {
+  const generation = ++slotGeneration;
+  const want = await desiredSlot(pushSubscribed);
+  // a newer render resolved while this one was awaiting: it owns the slot,
+  // and without this both would clear and both would append
+  if (generation !== slotGeneration || want === slotShowing) return;
+  slotShowing = want;
+
   const slot = $('notify-slot');
   slot.replaceChildren();
   slot.hidden = true;
+  if (want === 'absent') return;
+  if (want === 'button') {
+    const button = document.createElement('button');
+    button.textContent = 'Turn on notifications';
+    button.addEventListener('click', turnOnNotifications);
+    slot.append(button);
+    slot.hidden = false;
+    return;
+  }
+  quietLine(slot, SLOT_LINES[want]);
+}
 
-  if (iosNeedsHomeScreen()) {
-    quietLine(slot, 'On iPhone, notifications need Nag on your Home Screen: Share, then Add to Home Screen.');
-    return;
-  }
-  if (!pushAvailable) {
-    quietLine(slot, 'This browser cannot show notifications for Nag. Everything else works.');
-    return;
-  }
-  if (Notification.permission === 'denied') {
-    // a denied permission cannot be re-prompted from script, and pretending
-    // otherwise is worse than saying so (§9.8)
-    quietLine(slot, 'Your browser is blocking notifications for Nag. Re-allow them in site settings to turn them back on.');
-    return;
-  }
+// The conditions of §9.8, in the order of what each can explain: a browser
+// that cannot do this at all, an iPhone that needs installing first, a
+// permission the user has blocked, and only then the button. push_subscribed
+// is the belt to the other two braces — with the re-post awaited before the
+// slot is decided it is almost always redundant, and what it still catches is
+// the re-post having failed, or a subscription this browser holds that no
+// longer exists server-side.
+async function desiredSlot(pushSubscribed) {
+  if (iosNeedsHomeScreen()) return 'ios';
+  if (!pushAvailable) return 'unsupported';
+  if (Notification.permission === 'denied') return 'denied';
   const registration = await swRegistration;
   const sub = registration ? await registration.pushManager.getSubscription() : null;
-  if (Notification.permission === 'granted' && sub && pushSubscribed) return;
-
-  const button = document.createElement('button');
-  button.textContent = 'Turn on notifications';
-  button.addEventListener('click', turnOnNotifications);
-  slot.append(button);
-  slot.hidden = false;
+  if (Notification.permission === 'granted' && sub && pushSubscribed) return 'absent';
+  return 'button';
 }
 
 // turnOnNotifications runs on the click, because that is the gesture the
@@ -326,6 +350,15 @@ function iosNeedsHomeScreen() {
     navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
   return isIOS && !standalone;
 }
+
+// A denied permission cannot be re-prompted from script, and pretending
+// otherwise is worse than saying so (§9.8).
+const SLOT_LINES = {
+  ios: 'On iPhone, notifications need Nag on your Home Screen: Share, then Add to Home Screen.',
+  unsupported: 'This browser cannot show notifications for Nag. Everything else works.',
+  denied:
+    'Your browser is blocking notifications for Nag. Re-allow them in site settings to turn them back on.',
+};
 
 function quietLine(slot, text) {
   const line = document.createElement('p');
@@ -396,7 +429,17 @@ async function refreshState() {
   }
   if (!res.ok) return;
 
-  const body = await res.json();
+  let body;
+  try {
+    body = await res.json();
+  } catch {
+    // aborted between the headers and the end of the body, or a truncated
+    // response: this request writes nothing and the next trigger tries again.
+    // Unguarded, it would reject refreshState itself — and every caller
+    // (both timers, and the awaited one in handleWorkerMessage) either
+    // becomes an unhandled rejection or silently loses what follows it.
+    return;
+  }
   if (controller !== stateAbort) return;
   stateETag = res.headers.get('ETag');
   lastState = body;
@@ -480,9 +523,20 @@ function setBadge(count) {
 // up to 9 and the literal 9+ above it, at which point the dot means
 // "several" — which is all a 12-pixel circle can ever mean, and the exact
 // number is in the title and the list.
+let badgeDrawn = null;
+let badgeGeneration = 0;
+
 function drawFavicon(count) {
   const link = document.querySelector('link[rel=icon]');
   if (!link) return;
+  // this runs from every render pass, which on a quiet instance is a fresh
+  // Image, decode, canvas and toDataURL every 45 seconds forever
+  if (count === badgeDrawn) return;
+  badgeDrawn = count;
+  // the zero path writes synchronously and the badged one writes from a
+  // promise, so without a generation a reset can be overwritten by the count
+  // it was resetting
+  const generation = ++badgeGeneration;
   if (count === 0) {
     link.href = PLAIN_FAVICON;
     return;
@@ -490,6 +544,7 @@ function drawFavicon(count) {
   const base = new Image();
   base.src = PLAIN_FAVICON;
   base.decode().then(() => {
+    if (generation !== badgeGeneration) return;
     const canvas = document.createElement('canvas');
     canvas.width = 32;
     canvas.height = 32;
@@ -514,7 +569,11 @@ function drawFavicon(count) {
     ctx.fillText(count > 9 ? '9+' : String(count), 21, 22);
     link.href = canvas.toDataURL('image/png');
   }).catch(() => {
-    // a favicon that cannot be drawn costs the dot and nothing else
+    if (generation !== badgeGeneration) return;
+    // a favicon that cannot be drawn costs the dot and nothing else; clear
+    // the record so the next render tries again rather than skipping as
+    // already-drawn
+    badgeDrawn = null;
     link.href = PLAIN_FAVICON;
   });
 }
@@ -557,17 +616,29 @@ function consumeFocusParam() {
 // purged (§4.4), and both are ordinary: a notification is never the record
 // of anything (§7.6). Never fall back to flashing the first row.
 function flashRow(id) {
-  const row = document.querySelector(`li[data-id="${CSS.escape(String(id))}"]`);
+  const row = rowElement(id);
   if (!row) return;
+  flashId = String(id);
+  flashUntil = Date.now() + FLASH_MS;
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
   row.scrollIntoView({ block: 'center', behavior: still ? 'auto' : 'smooth' });
-  // CSSOM rather than a style attribute, which style-src 'self' forbids and
-  // §9.7 makes a rule; M3 replaces the provisional colour with the token
-  // (commit 38).
-  row.style.backgroundColor = '#E0A33E';
+  applyFlash(row);
   setTimeout(() => {
-    row.style.backgroundColor = '';
+    flashId = null;
+    const current = rowElement(id);
+    if (current) current.style.backgroundColor = '';
   }, FLASH_MS);
+}
+
+function rowElement(id) {
+  return document.querySelector(`li[data-id="${CSS.escape(String(id))}"]`);
+}
+
+// CSSOM rather than a style attribute, which style-src 'self' forbids and
+// §9.7 makes a rule; M3 replaces the provisional colour with the token
+// (commit 38).
+function applyFlash(row) {
+  row.style.backgroundColor = FLASH_FILL;
 }
 
 function renderZone(ul, rows) {
@@ -583,6 +654,7 @@ function renderZone(ul, rows) {
     });
     const li = document.createElement('li');
     li.dataset.id = r.id; // what §9.5's focus-reminder finds the row by
+    if (flashId === String(r.id) && Date.now() < flashUntil) applyFlash(li);
     li.append(label, ' ', clear);
     ul.append(li);
   }

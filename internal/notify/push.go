@@ -85,14 +85,20 @@ func (p *PushSender) SendTo(ctx context.Context, payload []byte, sub store.Subsc
 	case status < 300:
 		return SendResult{Status: status}
 	case status == http.StatusNotFound || status == http.StatusGone:
-		p.deleteSubscription(ctx, sub.Endpoint, endpoint, status)
-		return SendResult{Status: status, Deleted: true, Err: fmt.Sprintf("http %d", status)}
+		return SendResult{
+			Status:  status,
+			Deleted: p.deleteSubscription(ctx, sub.Endpoint, endpoint, status),
+			Err:     fmt.Sprintf("http %d", status),
+		}
 	case status == http.StatusUnauthorized || status == http.StatusForbidden:
 		if sub.VAPIDPublic != p.vapidPublic {
-			p.log.Warn("push subscription bound to a retired vapid key, deleted",
+			p.log.Warn("push subscription bound to a retired vapid key, deleting",
 				"endpoint", endpoint, "status", status)
-			p.deleteSubscription(ctx, sub.Endpoint, endpoint, status)
-			return SendResult{Status: status, Deleted: true, Err: "stale vapid key"}
+			return SendResult{
+				Status:  status,
+				Deleted: p.deleteSubscription(ctx, sub.Endpoint, endpoint, status),
+				Err:     "stale vapid key",
+			}
 		}
 		p.log.Error("push rejected under the current vapid key — a bug or a push-service problem, keeping the subscription",
 			"endpoint", endpoint, "status", status)
@@ -103,12 +109,23 @@ func (p *PushSender) SendTo(ctx context.Context, payload []byte, sub store.Subsc
 	}
 }
 
-func (p *PushSender) deleteSubscription(ctx context.Context, endpoint, truncated string, status int) {
-	if err := p.store.DeleteSubscription(ctx, endpoint); err != nil {
+// deleteSubscription drops the row the push service just declared dead, and
+// reports whether it went: `deleted` in §7.5's response says what this call
+// did, not what it intended, and a caller that claims a row is gone while it
+// is still in the table sends the reader looking in the wrong place.
+//
+// It runs on a context detached from the send's deadline. The response that
+// proves the row is dead often arrives with almost nothing left of the
+// budget — §7.5's whole budget is 3 seconds per send — and a delete
+// cancelled by that expiry would leave the row to fail on every sweep
+// forever, which is exactly what the ladder exists to stop (§7.1).
+func (p *PushSender) deleteSubscription(ctx context.Context, endpoint, truncated string, status int) bool {
+	if err := p.store.DeleteSubscription(context.WithoutCancel(ctx), endpoint); err != nil {
 		p.log.Error("delete subscription", "endpoint", truncated, "error", err)
-		return
+		return false
 	}
 	p.log.Info("subscription deleted", "endpoint", truncated, "status", status)
+	return true
 }
 
 // classifySendError maps a transport failure onto §4.1's closed set by

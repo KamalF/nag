@@ -459,3 +459,33 @@ func equalStrings(a, b []string) bool {
 	}
 	return true
 }
+
+// "Server down 40 minutes, 3 due at the start and 2 near the end — 1,
+// n == 2." The only row where phase 1 gates part of a tick and passes the
+// rest in the same transaction, so it is the one that pins the split
+// reaching phase 2 rather than the whole marked set.
+func TestMixedTickDigestsOnlyTheRowsInsideTheGate(t *testing.T) {
+	f := newFixture(t)
+	f.subscribe("https://push.example/aaaaaaaa")
+	var gated []int64
+	for i := range 3 {
+		gated = append(gated, f.create(fmt.Sprintf("past the gate %d", i), int64(i)).ID)
+	}
+	f.create("inside a", 2300)
+	f.create("inside b", 2350)
+
+	f.tickAt(2400) // the first three are 2400 s late, the last two 100 and 50
+
+	got := f.onlyPush()
+	if got.N != 2 {
+		t.Fatalf("n = %d, want 2 — the gated rows rode the digest", got.N)
+	}
+	if want := []string{"inside a", "inside b"}; !equalStrings(got.Texts, want) {
+		t.Errorf("texts = %v, want %v", got.Texts, want)
+	}
+	for _, id := range gated {
+		if !markedTooLate(f.logs.String(), id) {
+			t.Errorf("no too-late line for id=%d", id)
+		}
+	}
+}
