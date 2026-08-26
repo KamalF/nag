@@ -284,7 +284,10 @@ async function renderNotifySlot(pushSubscribed) {
     slot.hidden = false;
     return;
   }
-  quietLine(slot, SLOT_LINES[want]);
+  const line = document.createElement('p');
+  line.textContent = SLOT_LINES[want];
+  slot.append(line);
+  slot.hidden = false;
 }
 
 // The conditions of §9.8, in the order of what each can explain: a browser
@@ -415,13 +418,6 @@ const SLOT_LINES = {
   denied:
     'Your browser is blocking notifications for Nag. Re-allow them in site settings to turn them back on.',
 };
-
-function quietLine(slot, text) {
-  const line = document.createElement('p');
-  line.textContent = text;
-  slot.append(line);
-  slot.hidden = false;
-}
 
 // decodeKey and encodeKey are the only encoding code in app.js, and they
 // must be exact inverses over unpadded base64url — the alphabet

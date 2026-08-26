@@ -8,16 +8,18 @@ import (
 	"github.com/KamalF/nag/internal/notify"
 )
 
-// §7.5's two numbers. The budget is derived from WriteTimeout: 12 seconds
-// of sequential sends deliberately under the 15, so the response always
-// has three seconds of the write deadline to itself — this is the one
-// handler that legitimately spends seconds on third-party sockets, and
-// also the one whose whole value is the answer it prints. The per-send
-// timeout is 3 s rather than the sweep's 10 because a diagnostic probe
-// optimises for answering the caller: a subscription that cannot answer in
-// three seconds comes back as `timeout`, and that *is* the diagnosis.
+// §7.5's two numbers. The budget is derived from WriteTimeout — written as
+// the subtraction rather than as the 12 it works out to, so that tuning the
+// write deadline cannot break the derivation quietly: 12 seconds of
+// sequential sends deliberately under the 15, so the response always has
+// three seconds of the write deadline to itself — this is the one handler
+// that legitimately spends seconds on third-party sockets, and also the one
+// whose whole value is the answer it prints. The per-send timeout is 3 s
+// rather than the sweep's 10 because a diagnostic probe optimises for
+// answering the caller: a subscription that cannot answer in three seconds
+// comes back as `timeout`, and that *is* the diagnosis.
 const (
-	pushTestBudget  = 12 * time.Second
+	pushTestBudget  = WriteTimeout - 3*time.Second
 	pushTestPerSend = 3 * time.Second
 )
 
@@ -40,7 +42,7 @@ type pushTestResult struct {
 func (s *Server) handlePushTest(w http.ResponseWriter, r *http.Request) {
 	// Read before anything that can block. The budget is derived from
 	// WriteTimeout (§8.2), and a clock read taken after a query that can wait
-	// on the single connection (§4.3) starts the 12 seconds seconds into the
+	// on the single connection (§4.3) starts the budget seconds into the
 	// request — which is the derivation broken quietly.
 	now := time.Now()
 
