@@ -79,6 +79,13 @@ func (s *Store) SweepMark(ctx context.Context, now, tooLateAfter int64) (eligibl
 	return eligible, tooLate, tx.Commit()
 }
 
+// heldPredicate is the one definition of "held": a row the sweep has
+// handled that no push has carried yet. Phase 2's selection, its
+// predicate-not-id-list UPDATE, and §10.4's held-rows count must agree by
+// construction — a count that reports a different set than the digest
+// collects would misreport in exactly the silence it exists to explain.
+const heldPredicate = "done_at IS NULL AND notified_at IS NOT NULL AND pushed_at IS NULL"
+
 // HeldRow is one digest candidate: a row the sweep has handled that no
 // push has carried yet.
 type HeldRow struct {
@@ -107,20 +114,17 @@ func (s *Store) SweepCollectDigest(ctx context.Context, now, maxLateness int64) 
 	}
 	defer tx.Rollback()
 
-	const heldPredicate = "done_at IS NULL AND notified_at IS NOT NULL AND pushed_at IS NULL"
 	rows, err := tx.QueryContext(ctx,
 		"SELECT id, text, due_at FROM reminders WHERE "+heldPredicate+" ORDER BY due_at, id")
 	if err != nil {
 		return nil, nil, err
 	}
-	var any bool
 	for rows.Next() {
 		var r HeldRow
 		if err := rows.Scan(&r.ID, &r.Text, &r.DueAt); err != nil {
 			rows.Close()
 			return nil, nil, err
 		}
-		any = true
 		if r.DueAt < now-maxLateness {
 			tooLate = append(tooLate, r.ID)
 		} else {
@@ -131,7 +135,9 @@ func (s *Store) SweepCollectDigest(ctx context.Context, now, maxLateness int64) 
 	if err := rows.Err(); err != nil {
 		return nil, nil, err
 	}
-	if !any {
+	// every scanned row landed in exactly one of the two slices, so this is
+	// "the SELECT returned nothing" — the UPDATE below would touch no row
+	if len(sendable) == 0 && len(tooLate) == 0 {
 		return nil, nil, tx.Commit()
 	}
 	if _, err := tx.ExecContext(ctx,
@@ -146,9 +152,8 @@ func (s *Store) SweepCollectDigest(ctx context.Context, now, maxLateness int64) 
 // broken sweep.
 func (s *Store) HeldCount(ctx context.Context) (int, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM reminders
-		WHERE done_at IS NULL AND notified_at IS NOT NULL AND pushed_at IS NULL`).Scan(&n)
+	err := s.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM reminders WHERE "+heldPredicate).Scan(&n)
 	return n, err
 }
 

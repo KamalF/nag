@@ -6,17 +6,6 @@ import (
 	"time"
 )
 
-type logIDKey struct{}
-
-// setLogID records the affected reminder id — or §7.5's truncated endpoint
-// form for the push endpoints — for the request's §10.4 log line. On a
-// create it is the only place the new id is captured.
-func setLogID(r *http.Request, id string) {
-	if p, ok := r.Context().Value(logIDKey{}).(*string); ok {
-		*p = id
-	}
-}
-
 type logAttrsKey struct{}
 
 // setLogAttrs adds handler-specific fields to the request's §10.4 line.
@@ -28,6 +17,16 @@ func setLogAttrs(r *http.Request, attrs ...any) {
 	}
 }
 
+// setLogID records the affected reminder id — or §7.5's truncated endpoint
+// form for the push endpoints — for the request's §10.4 log line. On a
+// create it is the only place the new id is captured. It is the "id" field
+// of the one mechanism above, not a second one: every caller sets it once,
+// on the success path, so there is nothing an overwriting setter would do
+// differently.
+func setLogID(r *http.Request, id string) {
+	setLogAttrs(r, "id", id)
+}
+
 // logRequests applies §10.4: one INFO line per mutating request and one
 // per 4xx/5xx whatever the method — successful GETs are never logged, or
 // the 45-second poll would bury everything that matters. Never a token,
@@ -36,10 +35,8 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
-		var id string
 		var extra []any
-		ctx := context.WithValue(r.Context(), logIDKey{}, &id)
-		r = r.WithContext(context.WithValue(ctx, logAttrsKey{}, &extra))
+		r = r.WithContext(context.WithValue(r.Context(), logAttrsKey{}, &extra))
 		next.ServeHTTP(rec, r)
 
 		mutating := r.Method != http.MethodGet && r.Method != http.MethodHead
@@ -51,9 +48,6 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 			"path", r.URL.Path,
 			"status", rec.status,
 			"duration", time.Since(start).Round(time.Millisecond).String(),
-		}
-		if id != "" {
-			attrs = append(attrs, "id", id)
 		}
 		attrs = append(attrs, extra...)
 		s.log.Info("request", attrs...)

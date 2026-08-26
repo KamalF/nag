@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -18,17 +19,16 @@ import (
 // timestamp; every test states its times as offsets from it in seconds.
 const t0 = 1786742400
 
-// fakeSender records what phase 2 sent and to whom. The sweep ignores the
+// fakeSender records what phase 2 sent, one entry per send — the count is
+// how the per-subscription tests read "to whom". The sweep ignores the
 // verdict, so one canned result covers every test that needs a failure.
 type fakeSender struct {
 	payloads []string
-	subs     []store.Subscription
 	result   SendResult
 }
 
-func (f *fakeSender) SendTo(_ context.Context, _ time.Duration, payload []byte, sub store.Subscription) SendResult {
+func (f *fakeSender) SendTo(_ context.Context, _ time.Duration, payload []byte, _ store.Subscription) SendResult {
 	f.payloads = append(f.payloads, string(payload))
-	f.subs = append(f.subs, sub)
 	return f.result
 }
 
@@ -145,7 +145,7 @@ func TestTwoRowsInOneTickAreOneDigest(t *testing.T) {
 	if got.N != 2 || got.ID != nil || got.DueAt != nil {
 		t.Fatalf("want n=2 with no id and no due_at, got %+v", got)
 	}
-	if want := []string{"first", "second"}; !equalStrings(got.Texts, want) {
+	if want := []string{"first", "second"}; !slices.Equal(got.Texts, want) {
 		t.Errorf("texts = %v, want %v (due order)", got.Texts, want)
 	}
 }
@@ -448,18 +448,6 @@ func markedTooLate(logs string, id int64) bool {
 		strings.Contains(logs, fmt.Sprintf("id=%d", id))
 }
 
-func equalStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 // "Server down 40 minutes, 3 due at the start and 2 near the end — 1,
 // n == 2." The only row where phase 1 gates part of a tick and passes the
 // rest in the same transaction, so it is the one that pins the split
@@ -480,7 +468,7 @@ func TestMixedTickDigestsOnlyTheRowsInsideTheGate(t *testing.T) {
 	if got.N != 2 {
 		t.Fatalf("n = %d, want 2 — the gated rows rode the digest", got.N)
 	}
-	if want := []string{"inside a", "inside b"}; !equalStrings(got.Texts, want) {
+	if want := []string{"inside a", "inside b"}; !slices.Equal(got.Texts, want) {
 		t.Errorf("texts = %v, want %v", got.Texts, want)
 	}
 	for _, id := range gated {

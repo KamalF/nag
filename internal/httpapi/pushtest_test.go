@@ -24,9 +24,8 @@ type fakePush struct {
 }
 
 func (f *fakePush) SendTo(ctx context.Context, perSend time.Duration, payload []byte, _ store.Subscription) notify.SendResult {
-	sendCtx, cancel := context.WithTimeout(ctx, perSend)
+	ctx, cancel := context.WithTimeout(ctx, perSend)
 	defer cancel()
-	ctx = sendCtx
 	f.payloads = append(f.payloads, string(payload))
 	if f.delay > 0 {
 		select {
