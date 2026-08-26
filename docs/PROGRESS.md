@@ -29,7 +29,12 @@ Legend: `[x]` landed · `[ ]` not started · `[~]` in progress · `[B]` blocked 
 | [x] | 16 | Minimal unstyled UI | `8ecbf94` |
 | [x] | 17 | **M1 checkpoint** (no commit) | verified 2026-08-19 |
 
-## M2 — notifications (code complete; device pass outstanding)
+## M2 — notifications (code complete and reviewed; device pass outstanding)
+
+Plan 21–27 went through six independent `/code-review` rounds, each a fresh
+reviewer against `49a716c..HEAD`. Findings by round: 6, 6, 4, 4, 4, 0 — the loop
+stopped when round 6 came back clean. Rounds 4 and 5 found nothing wrong with the
+original code, only with earlier rounds' fixes.
 
 | | # | Step | Commit |
 |---|---|---|---|
@@ -91,3 +96,8 @@ one-step-one-commit index.
 | `0072687` | code-review findings — PATCH 404 on vanished row, boot resilience |
 | `daf5750` | this file |
 | `4815e35` | `.webmanifest` served as `application/manifest+json` |
+| `d53d6c5` | code review round 1 — aborted body read, flash lifetime, async races |
+| `781a169` | code review round 2 — unexamined key on the click path, flash ownership |
+| `5dd2965` | code review round 3 — a rejected subscribe POST was silent |
+| `227883b` | code review round 4 — flash restructured, `pushAvailable` recovers |
+| `5fccb27` | code review round 5 — the push test's budget bounds the whole handler |
