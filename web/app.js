@@ -18,6 +18,17 @@ const FLASH_MS = 2400;
 // past ~24.8 days wraps and fires immediately (§9.3).
 const MAX_TIMER_MS = 2000000000;
 
+// §9.3 pins the drawn favicon, and the pair of colours is hardcoded rather
+// than read from a custom property on purpose: a tab strip is not a page,
+// the dot has to stay legible against a light and a dark browser chrome,
+// and no media query reports which one Firefox painted. BASE_TITLE is read
+// from a constant for the same class of reason — reading document.title
+// would compound the prefix into "(3) (2) Nag" on the second call.
+const BADGE_FILL = '#E0A33E';
+const BADGE_INK = '#212A2E';
+const BASE_TITLE = 'Nag';
+const PLAIN_FAVICON = '/icons/32.png';
+
 let config = null;
 
 // The poll's state. stateETag and lastState are a pair: the 304 path
@@ -439,8 +450,73 @@ function renderState(state) {
   $('overdue-count').textContent = state.overdue_count;
   renderZone($('overdue'), state.overdue);
   renderZone($('later'), state.later);
+  // driven by the same render pass as the lists, which is what keeps all
+  // three outputs correct after a 304 too (§9.3)
+  setBadge(state.overdue_count);
   armDueTimer(state);
   if (subscriptionSynced) renderNotifySlot(state.push_subscribed);
+}
+
+// --- badge (§9.3) ---
+
+// setBadge writes the overdue count — never the total — to all three
+// outputs: the Badging API where it exists, a canvas-drawn favicon
+// everywhere, and the title prefix. Upcoming items must never light it up;
+// that is exactly what makes an icon badge mean something. setBadge(0) is a
+// full reset rather than a no-op.
+function setBadge(count) {
+  if ('setAppBadge' in navigator) {
+    // clearAppBadge, not setAppBadge(0): Firefox has no Badging API on any
+    // platform, so the other two outputs are the ones that always run
+    const badged = count > 0 ? navigator.setAppBadge(count) : navigator.clearAppBadge();
+    badged?.catch(() => {});
+  }
+  document.title = count > 0 ? `(${count}) ${BASE_TITLE}` : BASE_TITLE;
+  drawFavicon(count);
+}
+
+// drawFavicon paints 32.png at full size and, above zero, a filled circle in
+// the bottom-right quadrant with the count in it. The numeral is the count
+// up to 9 and the literal 9+ above it, at which point the dot means
+// "several" — which is all a 12-pixel circle can ever mean, and the exact
+// number is in the title and the list.
+function drawFavicon(count) {
+  const link = document.querySelector('link[rel=icon]');
+  if (!link) return;
+  if (count === 0) {
+    link.href = PLAIN_FAVICON;
+    return;
+  }
+  const base = new Image();
+  base.src = PLAIN_FAVICON;
+  base.decode().then(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 32;
+    canvas.height = 32;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(base, 0, 0, 32, 32);
+    // The dot is drawn on a plate-coloured disc a pixel and a half wider, so
+    // it reads as one object over whatever part of the mark it lands on —
+    // without that ring the amber dot and the amber row underneath it merge
+    // into a blob at the size a tab strip actually shows.
+    ctx.fillStyle = BADGE_INK;
+    ctx.beginPath();
+    ctx.arc(21, 21, 11, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.fillStyle = BADGE_FILL;
+    ctx.beginPath();
+    ctx.arc(21, 21, 9.5, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.fillStyle = BADGE_INK;
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(count > 9 ? '9+' : String(count), 21, 22);
+    link.href = canvas.toDataURL('image/png');
+  }).catch(() => {
+    // a favicon that cannot be drawn costs the dot and nothing else
+    link.href = PLAIN_FAVICON;
+  });
 }
 
 // --- messages from the worker (§9.5) ---
