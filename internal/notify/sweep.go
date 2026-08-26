@@ -25,14 +25,16 @@ const tooLateSeconds = 1800
 // mark time, and a row that passes it is then held for up to a full cooldown
 // window — and, after an outage, for however long the server was down (§7.3).
 //
-// One hour is the arithmetic of the two 30-minute constants rather than a
-// new number to remember: a row marked at the gate's boundary is already
-// 1800 s late and may then wait a whole 1800 s window, which is exactly what
-// §7.6's 60-row backlog row produces. Anything past that was not batched by
-// the cooldown, it was stranded by an outage — and the promise the two
-// constants make together is that such a row appears in the list and says
-// nothing.
-const maxHeldLatenessSeconds = tooLateSeconds * 2
+// The hour is the arithmetic of the two 30-minute constants rather than a new
+// number to remember: a row marked at the gate's edge is already 1800 s late
+// and then waits out a window the previous tick consumed, which lands the
+// worst legitimate case at 3570 s (pinned by a test). The five minutes on top
+// are slack, and they are not decoration — at 3600 the margin is a single
+// sweep tick, so two ticks lost to a failing query or a forward clock step
+// would silently drop reminders that the two constants allow. This has to
+// fail in the direction §7.3 already chose: at worst one extra notification,
+// never a missed one.
+const maxHeldLatenessSeconds = tooLateSeconds*2 + 300
 
 // perSendTimeout is §7.1's sweep-side deadline. Sends are sequential, so
 // three sleeping devices is a 30-second tick and the next one is skipped —

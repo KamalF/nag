@@ -528,8 +528,8 @@ func TestAStrandedHeldRowLeavesTheWindowOpen(t *testing.T) {
 // rather than 1800: phase 1's LIMIT 50 leaves rows for a later tick, which
 // marks them nearly 1800 s late — and the digest that carries them is behind
 // by nearly a full window on top of that, because the tick before it
-// consumed one. That is ~3445 s here, comfortably the worst case §7.6
-// produces, and it still has to arrive.
+// consumed one. That is ~3450 s here; the true worst case is 3570 s, pinned
+// separately below.
 func TestRowsMarkedLateAndHeldAFullWindowStillArrive(t *testing.T) {
 	f := newFixture(t)
 	f.subscribe("https://push.example/aaaaaaaa")
@@ -547,5 +547,30 @@ func TestRowsMarkedLateAndHeldAFullWindowStillArrive(t *testing.T) {
 	}
 	if strings.Contains(f.logs.String(), "held too long") {
 		t.Error("the bound refused rows that the two 30-minute constants allow")
+	}
+}
+
+// The worst lateness the sweep can legitimately produce, which is exactly
+// what the bound has to clear. Phase 1's LIMIT 50 leaves rows for the next
+// tick, where they are marked at the gate's own edge — 1800 s late — and the
+// window they then wait on was consumed by the tick before them, so it opens
+// nearly a full 1800 s after that. 3570 s, and it must arrive.
+func TestTheWorstLegitimateLatenessStillArrives(t *testing.T) {
+	f := newFixture(t)
+	f.subscribe("https://push.example/aaaaaaaa")
+	for i := range 60 {
+		f.create(fmt.Sprintf("backlog %d", i), -1770)
+	}
+
+	f.tickAt(0)    // marks 50, all 1770 s late, and digests them
+	f.tickAt(30)   // marks the last ten, now 1800 s late: the gate's edge
+	f.tickAt(1800) // the window reopens and they are 3570 s late
+
+	sent := f.sent()
+	if len(sent) != 2 || sent[0].N != 50 || sent[1].N != 10 {
+		t.Fatalf("want n=50 then n=10, got %+v", sent)
+	}
+	if strings.Contains(f.logs.String(), "held too long") {
+		t.Error("the bound refused a row the two 30-minute constants allow")
 	}
 }

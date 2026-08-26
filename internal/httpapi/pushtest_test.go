@@ -197,15 +197,21 @@ func TestPushTestLogsAttemptedAndDeletedCounts(t *testing.T) {
 
 // §7.5's budget is derived from WriteTimeout rather than stated as a number,
 // so that tuning the write deadline cannot quietly leave this handler
-// spending longer on third-party sockets than the deadline it has to answer
-// within. The headroom is what makes the response reachable at all, and one
-// send's worth of it is the floor: the last send may run its full length.
+// spending longer on third-party sockets than the deadline it must answer
+// within. The two checks catch different things, and the first cannot fail
+// while the derivation stands — that is what the derivation is for; it is
+// here to catch the budget being restated as a literal that no longer fits.
 func TestPushTestBudgetLeavesHeadroomUnderWriteTimeout(t *testing.T) {
 	if pushTestBudget >= WriteTimeout {
 		t.Fatalf("budget %s does not fit under WriteTimeout %s", pushTestBudget, WriteTimeout)
 	}
-	if headroom := WriteTimeout - pushTestBudget; headroom < pushTestPerSend {
-		t.Errorf("headroom %s is under one send (%s) — a last send that runs long loses the response",
-			headroom, pushTestPerSend)
+	// This is the half the derivation cannot guarantee: subtract the headroom
+	// from a small enough WriteTimeout and the budget reaches zero or goes
+	// negative, so the handler's deadline is already expired at its first
+	// send and every subscription comes back "not attempted" under a 200 — a
+	// diagnostic endpoint that diagnoses nothing.
+	if pushTestBudget < pushTestPerSend {
+		t.Fatalf("budget %s is under a single send (%s) — the handler could not attempt one",
+			pushTestBudget, pushTestPerSend)
 	}
 }

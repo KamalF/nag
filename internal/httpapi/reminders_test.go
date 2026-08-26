@@ -207,22 +207,31 @@ func TestCreateLogsTheNewID(t *testing.T) {
 
 // §10.4's line carries the affected id once. setLogID is the "id" field of
 // setLogAttrs, which appends — where it used to overwrite a single slot — so
-// a handler setting it twice would now print two. Every caller sets it once,
-// on the success path, and this is what keeps that true.
-func TestMutatingRequestLogsExactlyOneID(t *testing.T) {
+// a handler setting it twice would now print two. Every mutating endpoint
+// that names a reminder is checked, because the invariant is a property of
+// each handler rather than of the mechanism they share.
+func TestMutatingRequestsLogExactlyOneID(t *testing.T) {
 	var logs strings.Builder
 	h := testServer(t, &logs).Handler()
 	created := createReminder(t, h, fmt.Sprintf(`{"text":"x","due_at":%d}`, time.Now().Unix()+3600))
 	id := int64(created["id"].(float64))
 
-	sofar := logs.Len()
-	authedJSON(t, h, http.MethodPost, fmt.Sprintf("/api/reminders/%d/done", id), "")
+	for _, call := range []struct{ method, path, body string }{
+		{http.MethodPatch, fmt.Sprintf("/api/reminders/%d", id), `{"text":"y"}`},
+		{http.MethodPost, fmt.Sprintf("/api/reminders/%d/done", id), ""},
+		{http.MethodPost, fmt.Sprintf("/api/reminders/%d/undone", id), ""},
+		{http.MethodDelete, fmt.Sprintf("/api/reminders/%d", id), ""},
+	} {
+		sofar := logs.Len()
+		authedJSON(t, h, call.method, call.path, call.body)
+		line := logs.String()[sofar:]
 
-	line := logs.String()[sofar:]
-	if got := strings.Count(line, "id="); got != 1 {
-		t.Errorf("line carries %d id fields, want exactly 1: %q", got, line)
-	}
-	if !strings.Contains(line, fmt.Sprintf("id=%d", id)) {
-		t.Errorf("line does not name the reminder: %q", line)
+		if got := strings.Count(line, "id="); got != 1 {
+			t.Errorf("%s %s: line carries %d id fields, want exactly 1: %q",
+				call.method, call.path, got, line)
+		}
+		if !strings.Contains(line, fmt.Sprintf("id=%d", id)) {
+			t.Errorf("%s %s: line does not name the reminder: %q", call.method, call.path, line)
+		}
 	}
 }
