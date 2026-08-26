@@ -9,7 +9,24 @@ const VISIBLE_POLL_MS = 45000; // §9.3
 
 let config = null;
 
+// §9.5: one feature-detect boolean, computed once, before any of the push
+// machinery runs. A Firefox private window, an older desktop Safari and any
+// non-secure origin fail at least one of these, and a naive register() call
+// throws a TypeError that would take the rest of the load — the list
+// included — with it. Losing push must cost push and nothing else.
+const pushSupported =
+  'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+
+// pushAvailable starts at pushSupported and goes false if registration
+// itself fails. §9.8's notification slot reads it in the next commit.
+let pushAvailable = pushSupported;
+let swRegistration = null;
+
 async function init() {
+  // deliberately not awaited: registration must never sit between the load
+  // and the first render (§9.5)
+  registerWorker();
+
   let state;
   try {
     const res = await fetch('/api/state');
@@ -35,6 +52,28 @@ async function init() {
   setInterval(() => {
     if (!document.hidden) refreshState();
   }, VISIBLE_POLL_MS);
+}
+
+// --- service worker (§9.5) ---
+
+// Registration is unconditional, on every load, and needs no gesture and no
+// permission — Notification.requestPermission() and pushManager.subscribe()
+// are the calls that do (§9.8). It is idempotent, so the repeat costs one
+// no-op against the browser's registration store, and it is the only way a
+// skipWaiting deploy reaches a tab that has been pinned for months. The
+// registration object is kept: never call register a second time to "get" it.
+async function registerWorker() {
+  if (!pushSupported) return;
+  try {
+    swRegistration = await navigator.serviceWorker.register('/sw.js');
+  } catch (err) {
+    // a syntax error in sw.js, a hard-refresh race, a browser with workers
+    // disabled by policy: nothing to retry and nothing the user can do. It
+    // is caught rather than left to reject because an unhandled rejection on
+    // the load path must not stop the poll from starting (§9.5).
+    console.error('service worker registration failed', err);
+    pushAvailable = false;
+  }
 }
 
 // --- login (§8.1) ---

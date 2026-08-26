@@ -38,8 +38,8 @@ Legend: `[x]` landed · `[ ]` not started · `[~]` in progress · `[B]` blocked 
 | [x] | 20 | Push sender and response ladder | `49a716c` |
 | [x] | 21 | Sweep phase 2: digest and cooldown | `ba55c2d` |
 | [x] | 22 | `POST /api/push/test` | `6ca8121` |
-| [x] | 23 | Manifest and icons | |
-| [ ] | 24 | Service worker | |
+| [x] | 23 | Manifest and icons | `b60d6aa` |
+| [x] | 24 | Service worker | |
 | [ ] | 25 | Permission flow and unconditional re-post | |
 | [ ] | 26 | Poll engine and page-side worker messages | |
 | [ ] | 27 | Badge | |
@@ -89,3 +89,5 @@ one-step-one-commit index.
 | `3d2ae3e` | `/simplify` pass over M1 (4-angle review) |
 | `e29774a` | config: reject empty or `Local` timezone (§5.5) |
 | `0072687` | code-review findings — PATCH 404 on vanished row, boot resilience |
+| `daf5750` | this file |
+| — | `.webmanifest` served as `application/manifest+json` |

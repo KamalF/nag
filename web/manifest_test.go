@@ -110,3 +110,12 @@ func TestIconsAreEmbeddedAtTheirNamedSizes(t *testing.T) {
 		t.Errorf("icons/ holds %d files, want exactly 4", len(entries))
 	}
 }
+
+// §9.5: worker scope is path-based, so sw.js must sit at the root of the
+// embedded tree — a nested worker cannot control the page, and the failure
+// is silent registration under a scope that never sees a navigation.
+func TestServiceWorkerIsEmbeddedAtTheRoot(t *testing.T) {
+	if _, err := Files.ReadFile("sw.js"); err != nil {
+		t.Fatal(err)
+	}
+}
