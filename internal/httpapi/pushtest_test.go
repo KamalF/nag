@@ -194,3 +194,18 @@ func TestPushTestLogsAttemptedAndDeletedCounts(t *testing.T) {
 		t.Errorf("log line carries an endpoint in full: %q", logs.String())
 	}
 }
+
+// §7.5's budget is derived from WriteTimeout rather than stated as a number,
+// so that tuning the write deadline cannot quietly leave this handler
+// spending longer on third-party sockets than the deadline it has to answer
+// within. The headroom is what makes the response reachable at all, and one
+// send's worth of it is the floor: the last send may run its full length.
+func TestPushTestBudgetLeavesHeadroomUnderWriteTimeout(t *testing.T) {
+	if pushTestBudget >= WriteTimeout {
+		t.Fatalf("budget %s does not fit under WriteTimeout %s", pushTestBudget, WriteTimeout)
+	}
+	if headroom := WriteTimeout - pushTestBudget; headroom < pushTestPerSend {
+		t.Errorf("headroom %s is under one send (%s) — a last send that runs long loses the response",
+			headroom, pushTestPerSend)
+	}
+}

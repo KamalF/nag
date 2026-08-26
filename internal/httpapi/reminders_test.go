@@ -204,3 +204,25 @@ func TestCreateLogsTheNewID(t *testing.T) {
 		t.Errorf("log carries reminder text: %q", logs.String())
 	}
 }
+
+// §10.4's line carries the affected id once. setLogID is the "id" field of
+// setLogAttrs, which appends — where it used to overwrite a single slot — so
+// a handler setting it twice would now print two. Every caller sets it once,
+// on the success path, and this is what keeps that true.
+func TestMutatingRequestLogsExactlyOneID(t *testing.T) {
+	var logs strings.Builder
+	h := testServer(t, &logs).Handler()
+	created := createReminder(t, h, fmt.Sprintf(`{"text":"x","due_at":%d}`, time.Now().Unix()+3600))
+	id := int64(created["id"].(float64))
+
+	sofar := logs.Len()
+	authedJSON(t, h, http.MethodPost, fmt.Sprintf("/api/reminders/%d/done", id), "")
+
+	line := logs.String()[sofar:]
+	if got := strings.Count(line, "id="); got != 1 {
+		t.Errorf("line carries %d id fields, want exactly 1: %q", got, line)
+	}
+	if !strings.Contains(line, fmt.Sprintf("id=%d", id)) {
+		t.Errorf("line does not name the reminder: %q", line)
+	}
+}
