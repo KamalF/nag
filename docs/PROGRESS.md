@@ -36,6 +36,11 @@ reviewer against `49a716c..HEAD`. Findings by round: 6, 6, 4, 4, 4, 0 — the lo
 stopped when round 6 came back clean. Rounds 4 and 5 found nothing wrong with the
 original code, only with earlier rounds' fixes.
 
+Then three `/simplify` rounds over the same range: 6, 3, 1 changes, stopping when
+round 3 turned up nothing in production code. Every change was read and committed
+by hand — one was reverted and rewritten, since it "fixed" a comment that was
+correct.
+
 | | # | Step | Commit |
 |---|---|---|---|
 | [x] | 18 | `flattenLinks` | `0d77603` |
@@ -102,4 +107,7 @@ one-step-one-commit index.
 | `227883b` | code review round 4 — flash restructured, `pushAvailable` recovers |
 | `5fccb27` | code review round 5 — the push test's budget bounds the whole handler |
 | `2fa758b` | this file: the M2 review loop |
-| — | phase 2's lateness bound (§7.3, §7.6) — closes the review's open spec question |
+| `64b8183` | phase 2's lateness bound (§7.3, §7.6) — closed the review's open spec question |
+| `f5c6204` | `/simplify` round 1 — one log mechanism, one held-set predicate |
+| `4d7b388` | `/simplify` round 2 — the push-test budget derives from `WriteTimeout` |
+| `5a5df85` | `/simplify` round 3 — test-helper reuse; loop stopped here |
