@@ -1106,7 +1106,7 @@ CSRF needs no token: a mutating request must carry `Content-Type: application/js
 
 ### 10.3 Backups
 
-The DB is the only copy of everything. **With WAL on, copying `nag.db` alone can yield a corrupt file** — the recent writes live in `-wal`. Either stop the container and copy all three of `data/nag.db{,-wal,-shm}`, or add whatever backup path you prefer around `VACUUM INTO`. Keep `./data` on local disk: WAL misbehaves on network filesystems, so a bind mount pointing at NFS is the one way to break this.
+The DB is the only copy of everything. **With WAL on, copying `nag.db` alone can yield a corrupt file** — the recent writes live in `-wal`. Either stop the container and copy `data/nag.db*` — a clean stop (§10.1) checkpoints the WAL into `nag.db` and removes `-wal` and `-shm`, so after it `nag.db` alone is complete and the glob copies whatever exists — or add whatever backup path you prefer around `VACUUM INTO`. Keep `./data` on local disk: WAL misbehaves on network filesystems, so a bind mount pointing at NFS is the one way to break this.
 
 Other gotchas: the container must join the network caddy-docker-proxy watches or the labels are silently ignored.
 

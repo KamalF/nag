@@ -55,8 +55,11 @@ Start it:
 docker compose up -d
 ```
 
-On first boot nag writes its default config to `config/nag.toml`. Open the
-site, enter the value of `NAG_TOKEN` once, and press "Turn on notifications".
+On first boot nag writes its default config to `config/nag.toml`. Its
+timezone is `Europe/Paris`, and every preset resolves in it, so set
+`timezone` to yours and reload (see Configuration). Then open the site,
+enter the value of `NAG_TOKEN` from `nag.env` once, and press "Turn on
+notifications".
 
 ### iPhone
 
@@ -108,6 +111,8 @@ Ask the server to push a test notification to every subscribed browser:
 curl -X POST -H "Authorization: Bearer $NAG_TOKEN" https://nag.example.com/api/push/test
 ```
 
+`$NAG_TOKEN` is the value from `nag.env`; set it in your shell first.
+
 Each subscription gets a status: `201` means the push service accepted it.
 Logs are the only other observability: `docker compose logs nag`. They
 never contain the token, a channel URL, a full push endpoint, or reminder
@@ -115,27 +120,42 @@ text.
 
 ## Backups
 
-The database is the only copy of everything. With WAL enabled, copying
-`nag.db` alone can produce a corrupt file, because recent writes live in
-`nag.db-wal`. Either stop the container and copy all three files:
+The database is the only copy of everything. While nag runs, recent writes
+live in `nag.db-wal`, so copying `nag.db` alone from a running instance can
+produce a corrupt file. Either stop the container first:
 
 ```
 docker compose stop nag
-cp data/nag.db data/nag.db-wal data/nag.db-shm /your/backup/
+cp data/nag.db* /your/backup/
 docker compose start nag
 ```
 
-or use `VACUUM INTO` from your own backup tooling. Keep `data/` on a local
+A clean stop folds the WAL back into `nag.db` and removes the `-wal` and
+`-shm` files, so the glob copies whatever is there. Or use `VACUUM INTO`
+from your own backup tooling. Keep `data/` on a local
 disk: WAL does not work reliably on a network filesystem.
 
 ## Building
+
+The setup commands build the image implicitly, without a version. To stamp
+one, build explicitly:
 
 ```
 docker compose build --build-arg VERSION=$(git describe --tags --always --dirty)
 ```
 
-`nag version` prints the version, and the boot log names it. A version of
-`dev` means the binary was built by hand.
+`docker compose run --rm nag version` prints the version, and the boot log
+names it. A version of `dev` means the image was built without that
+argument.
+
+To update, rebuild before restarting — `up -d` reuses an existing
+`nag:latest` and would restart the old binary:
+
+```
+git pull
+docker compose build --build-arg VERSION=$(git describe --tags --always --dirty)
+docker compose up -d
+```
 
 Local development uses the Go version pinned in `mise.toml`:
 `go test ./...` runs every test. The frontend has no build step and no
