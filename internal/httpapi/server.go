@@ -49,8 +49,7 @@ const maxBodyBytes = 16 << 10
 
 type Server struct {
 	store *store.Store
-	cfg   *config.Config
-	loc   *time.Location // general.timezone, resolved once — the config is validated
+	live  *config.Live // load once per request: one snapshot throughout (§5.5)
 	web   fs.FS
 	log   *slog.Logger
 
@@ -61,10 +60,6 @@ type Server struct {
 	push       pushSender
 	pushBudget time.Duration
 
-	// configVersion lives in memory and restarts at 1 (§5.5); it moves
-	// only when M4's reload changes what the client can see.
-	configVersion int
-
 	// loginSlot serialises failed logins: one token held at a time
 	loginSlot  chan struct{}
 	loginSleep time.Duration
@@ -72,7 +67,7 @@ type Server struct {
 
 type Options struct {
 	Store       *store.Store
-	Config      *config.Config
+	Config      *config.Live
 	Web         fs.FS
 	Token       string
 	VAPIDPublic string
@@ -81,29 +76,20 @@ type Options struct {
 }
 
 func New(o Options) *Server {
-	loc, err := time.LoadLocation(o.Config.General.Timezone)
-	if err != nil {
-		loc = time.UTC // unreachable behind config validation (§5.5)
-	}
 	return &Server{
-		store:         o.Store,
-		cfg:           o.Config,
-		loc:           loc,
-		web:           o.Web,
-		log:           o.Log,
-		token:         o.Token,
-		cookieKey:     cookieKey(o.Token),
-		vapidPublic:   o.VAPIDPublic,
-		push:          o.Push,
-		pushBudget:    pushTestBudget,
-		configVersion: 1,
-		loginSlot:     make(chan struct{}, 1),
-		loginSleep:    250 * time.Millisecond,
+		store:       o.Store,
+		live:        o.Config,
+		web:         o.Web,
+		log:         o.Log,
+		token:       o.Token,
+		cookieKey:   cookieKey(o.Token),
+		vapidPublic: o.VAPIDPublic,
+		push:        o.Push,
+		pushBudget:  pushTestBudget,
+		loginSlot:   make(chan struct{}, 1),
+		loginSleep:  250 * time.Millisecond,
 	}
 }
-
-// ConfigVersion is read by serve's §10.4 boot line.
-func (s *Server) ConfigVersion() int { return s.configVersion }
 
 // Handler assembles the mux. `GET /` (the embedded frontend) is
 // unauthenticated (§8.1); `/api/` is registered explicitly as a catch-all

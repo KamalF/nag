@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/KamalF/nag/internal/config"
 	"github.com/KamalF/nag/internal/store"
 )
 
@@ -48,7 +49,7 @@ func (s *Server) handlePatch(w http.ResponseWriter, r *http.Request) {
 	// backdated check compares against it, so a chip tapped a hair before
 	// its own target cannot resolve to a moment the second read calls past
 	now := time.Now()
-	upd, errMessage, err := s.buildUpdate(r.Context(), fields, current, now)
+	upd, errMessage, err := s.buildUpdate(r.Context(), fields, current, s.live.Load(), now)
 	if err != nil {
 		s.log.Error("patch: build update", "error", err)
 		writeError(w, http.StatusInternalServerError, "")
@@ -78,7 +79,8 @@ func (s *Server) handlePatch(w http.ResponseWriter, r *http.Request) {
 // buildUpdate consumes the known keys from fields and rejects what is
 // left, naming the lexically first leftover — Go randomises map
 // iteration, so "the first one" is chosen, not taken (§8.3).
-func (s *Server) buildUpdate(ctx context.Context, fields map[string]json.RawMessage, current store.Reminder, now time.Time) (store.ReminderUpdate, string, error) {
+func (s *Server) buildUpdate(ctx context.Context, fields map[string]json.RawMessage, current store.Reminder,
+	snap *config.Snapshot, now time.Time) (store.ReminderUpdate, string, error) {
 	var upd store.ReminderUpdate
 
 	if raw, present := consume(fields, "text"); present {
@@ -115,7 +117,7 @@ func (s *Server) buildUpdate(ctx context.Context, fields map[string]json.RawMess
 		}
 		// re-time: an offset preset resolves from now, never from the old
 		// due_at (§4.1)
-		due, errMessage := s.resolveDueAt(preset, dueAt, now)
+		due, errMessage := resolveDueAt(snap, preset, dueAt, now)
 		if errMessage != "" {
 			return upd, errMessage, nil
 		}

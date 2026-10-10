@@ -41,7 +41,7 @@ func testServerWithDB(t *testing.T, logs io.Writer) (*Server, string) {
 	}
 	s := New(Options{
 		Store:       st,
-		Config:      testConfig(),
+		Config:      config.NewLive("", testConfig(), testVAPIDPublic),
 		Web:         web,
 		Token:       testToken,
 		VAPIDPublic: testVAPIDPublic,

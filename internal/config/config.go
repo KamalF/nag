@@ -1,6 +1,6 @@
 // Package config loads the TOML behaviour file (§5.3): types, the embedded
-// default written out on first boot, and — in later commits — validation
-// (§5.4, §5.5) and SIGHUP reload.
+// default written out on first boot, validation (§5.4, §5.5), and the live
+// copy SIGHUP replaces (live.go).
 package config
 
 import (
@@ -33,11 +33,11 @@ type General struct {
 // Picker constrains only the picker sheet (§5.4) — never when reminders
 // may fire.
 type Picker struct {
-	HourMin     int    `toml:"hour_min"`
-	HourMax     int    `toml:"hour_max"`
-	MinuteStep  int    `toml:"minute_step"`
-	DefaultTime string `toml:"default_time"`
-	WeekStart   string `toml:"week_start"`
+	HourMin     int    `toml:"hour_min"     json:"hour_min"`
+	HourMax     int    `toml:"hour_max"     json:"hour_max"`
+	MinuteStep  int    `toml:"minute_step"  json:"minute_step"`
+	DefaultTime string `toml:"default_time" json:"default_time"`
+	WeekStart   string `toml:"week_start"   json:"week_start"`
 }
 
 // Preset carries the union of every kind's fields. The kind-specific ones

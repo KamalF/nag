@@ -81,7 +81,7 @@ func (s *Server) handleCreateReminder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now()
-	dueAt, errMessage := s.resolveDueAt(body.Preset, body.DueAt, now)
+	dueAt, errMessage := resolveDueAt(s.live.Load(), body.Preset, body.DueAt, now)
 	if errMessage != "" {
 		writeError(w, http.StatusBadRequest, errMessage)
 		return
@@ -136,7 +136,7 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := stateResponse{
 		ServerTime:     now,
-		ConfigVersion:  s.configVersion,
+		ConfigVersion:  s.live.Load().Version,
 		PushSubscribed: subscriptions > 0,
 		Overdue:        []reminderResponse{},
 		Later:          []reminderResponse{},
@@ -174,16 +174,16 @@ func stateETag(resp stateResponse) string {
 // resolveDueAt applies §8.3's exactly-one-of rule and returns the due
 // instant in Unix seconds. The server never falls back to default_preset —
 // the client always resolves it.
-func (s *Server) resolveDueAt(preset *string, dueAt *int64, now time.Time) (int64, string) {
+func resolveDueAt(snap *config.Snapshot, preset *string, dueAt *int64, now time.Time) (int64, string) {
 	switch {
 	case preset != nil && dueAt != nil:
 		return 0, "send either preset or due_at, not both"
 	case preset != nil:
-		p, ok := s.findPreset(*preset)
+		p, ok := findPreset(snap, *preset)
 		if !ok {
 			return 0, fmt.Sprintf("unknown preset %q — reload to get the current list", *preset)
 		}
-		due, err := presets.Evaluate(p, now, s.loc)
+		due, err := presets.Evaluate(p, now, snap.Location)
 		if err != nil {
 			// unreachable on a validated config; answer honestly anyway
 			return 0, fmt.Sprintf("preset %q cannot be evaluated", *preset)
@@ -199,8 +199,8 @@ func (s *Server) resolveDueAt(preset *string, dueAt *int64, now time.Time) (int6
 	}
 }
 
-func (s *Server) findPreset(key string) (config.Preset, bool) {
-	for _, p := range s.cfg.Presets {
+func findPreset(snap *config.Snapshot, key string) (config.Preset, bool) {
+	for _, p := range snap.Presets {
 		if p.Key == key {
 			return p, true
 		}
