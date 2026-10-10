@@ -69,8 +69,8 @@ claim going out as `mailto:mailto:…`.
 |---|---|---|---|
 | [x] | 30 | Design tokens and base styling | `4e60b3d` |
 | [x] | 31 | Layout | `26340e5` |
-| [x] | 32 | Time formatters | |
-| [ ] | 33 | Keyed list rendering | |
+| [x] | 32 | Time formatters | `aff395f` |
+| [x] | 33 | Keyed list rendering | |
 | [ ] | 34 | Inline row editor | |
 | [ ] | 35 | Markdown link rendering (client) | |
 | [ ] | 36 | Picker sheet | |

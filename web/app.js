@@ -52,13 +52,11 @@ let stateAbort = null;
 let dueTimer = null;
 let pollTimer = null;
 
-// A flash is a request, not a style. renderZone rebuilds every row on every
-// render and a 304 re-renders routinely (§9.3), so the request has to outlive
-// the element — and the row a click names may not have been drawn yet at all,
-// since an aborted refresh resolves having rendered nothing. pendingFlash is
-// the request waiting for its row; litRow is what is currently painted, so a
-// rebuild can restore it and clearFlash can find it. M3's keyed render
-// (commit 33) is what eventually makes the rebuild unnecessary.
+// A flash is a request, not a style: the row a click names may not have
+// been drawn yet at all, since an aborted refresh resolves having rendered
+// nothing. pendingFlash is the request waiting for its row; litRow is the
+// row currently painted, so clearFlash can find it. The keyed render below
+// reuses the node, so the paint survives every pass on its own.
 let pendingFlash = null;
 let litRow = null;
 let flashTimer = null;
@@ -550,8 +548,7 @@ function armDueTimer(state) {
 
 function renderState(state) {
   $('overdue-count').textContent = state.overdue_count;
-  renderZone($('overdue'), state.overdue, true);
-  renderZone($('later'), state.later, false);
+  renderLists(state);
   // a zone heading is hidden entirely when its list is empty, and the empty
   // state replaces both (§9.2)
   const hasOverdue = state.overdue.length > 0;
@@ -755,7 +752,7 @@ function flashRow(id) {
 
 // applyPendingFlash runs at the end of every render, which is the only place
 // it can: scrollIntoView does nothing to an element that is not in the
-// document yet, so lighting a row from inside renderZone would paint it and
+// document yet, so lighting a row from inside renderLists would paint it and
 // never move the page. A request whose row is in neither list simply waits,
 // and expires — which is §9.5's "nothing happens" for a reminder that was
 // cleared elsewhere, and a second chance for one whose render lost a race.
@@ -798,39 +795,101 @@ function rowElement(id) {
   return document.querySelector(`li[data-id="${CSS.escape(String(id))}"]`);
 }
 
-function renderZone(ul, rows, late) {
-  ul.replaceChildren();
-  for (const r of rows) {
-    const li = document.createElement('li');
-    li.className = 'row ' + (late ? 'late' : 'later');
-    li.dataset.id = r.id; // what §9.5's focus-reminder finds the row by
+// --- the keyed list (§9.2) ---
 
-    const txt = document.createElement('span');
-    txt.className = 'txt';
-    txt.textContent = r.text;
-    const when = document.createElement('span');
-    when.className = 'when';
-    when.textContent = whenText(r.due_at);
+// rows maps a reminder id to its row: the li and the parts a pass updates.
+// A poll must never do to a row what a reload would do to the page, so a
+// pass reuses the node rather than replacing it — which is what keeps focus
+// inside a row's actions, the :hover and :focus-within reveal, and the
+// browser's scroll anchoring across the 45-second poll and the 304 path.
+// row.editing is set by the inline editor: such a row is not touched at all.
+const rows = new Map();
 
-    const acts = document.createElement('span');
-    acts.className = 'acts';
-    acts.append(actionButton('Clear', late, () => mutate('/api/reminders/' + r.id + '/done', 'POST')));
-    // Re-snooze chips belong to the overdue zone only: an offset preset
-    // resolves from now (§4.1), so "30 min" on a row waiting for next Monday
-    // would quietly pull it forward by six days (§9.2).
-    if (late) {
-      for (const p of config.presets) {
-        if (!p.quick) continue;
-        acts.append(actionButton(p.label, false, () =>
-          mutate('/api/reminders/' + r.id, 'PATCH', { preset: p.key })));
-      }
-    }
-
-    li.append(txt, when, acts);
-    ul.append(li);
-    // a rebuild inside the 2.4 s must not drop the highlight it is showing
-    if (litRow === String(r.id)) paintFlash(li);
+// renderLists is the whole pass: every row is updated in place, moved only
+// if it is out of order, and removed only once it is in neither list. The
+// server-sorted order with its id tiebreak (§8.2) is what makes "only what
+// moved, moves" stable.
+function renderLists(state) {
+  const wanted = new Set();
+  for (const r of state.overdue) wanted.add(String(r.id));
+  for (const r of state.later) wanted.add(String(r.id));
+  placeZone($('overdue'), state.overdue, true);
+  placeZone($('later'), state.later, false);
+  for (const [id, row] of rows) {
+    // a row cleared elsewhere while its editor is open stays on screen until
+    // the editor closes, and the next pass reconciles it
+    if (wanted.has(id) || row.editing) continue;
+    row.li.remove();
+    rows.delete(id);
   }
+}
+
+// placeZone walks the zone's list against the current children with a
+// cursor: a node already in place is passed over untouched, and only an
+// out-of-place one is inserted. Rows leaving the zone drift past the end,
+// where the other zone's pass or the removal above picks them up.
+function placeZone(ul, list, late) {
+  let cursor = ul.firstElementChild;
+  for (const r of list) {
+    const row = updateRow(r, late);
+    if (row.li === cursor) {
+      cursor = cursor.nextElementSibling;
+      continue;
+    }
+    ul.insertBefore(row.li, cursor);
+  }
+}
+
+// updateRow creates the row on first sight and otherwise touches only what
+// changed: for an unchanged row that is the time string and nothing else.
+function updateRow(r, late) {
+  const id = String(r.id);
+  let row = rows.get(id);
+  if (!row) {
+    row = createRow(id);
+    rows.set(id, row);
+  }
+  if (row.editing) return row;
+  row.reminder = r;
+  if (row.late !== late) {
+    row.late = late;
+    row.li.className = 'row ' + (late ? 'late' : 'later');
+    row.acts.replaceChildren(...rowActions(row));
+  }
+  if (row.text !== r.text) {
+    row.text = r.text;
+    row.txt.textContent = r.text;
+  }
+  row.when.textContent = whenText(r.due_at);
+  return row;
+}
+
+function createRow(id) {
+  const li = document.createElement('li');
+  li.dataset.id = id; // what §9.5's focus-reminder finds the row by
+  const txt = document.createElement('span');
+  txt.className = 'txt';
+  const when = document.createElement('span');
+  when.className = 'when';
+  const acts = document.createElement('span');
+  acts.className = 'acts';
+  li.append(txt, when, acts);
+  return { id, li, txt, when, acts, late: null, text: null, reminder: null, editing: false };
+}
+
+// rowActions: Clear for every row, plus the quick re-snooze chips on overdue
+// rows only — an offset preset resolves from now (§4.1), so "30 min" on a
+// row waiting for next Monday would quietly pull it forward by six days.
+function rowActions(row) {
+  const path = '/api/reminders/' + row.id;
+  const actions = [actionButton('Clear', row.late, () => mutate(path + '/done', 'POST'))];
+  if (row.late) {
+    for (const p of config.presets) {
+      if (!p.quick) continue;
+      actions.push(actionButton(p.label, false, () => mutate(path, 'PATCH', { preset: p.key })));
+    }
+  }
+  return actions;
 }
 
 function actionButton(label, primary, onClick) {
