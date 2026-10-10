@@ -6,7 +6,11 @@
   <title>Nag</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icons/32.png" sizes="32x32" type="image/png">
-  <meta name="theme-color" content="#212A2E">
+  <!-- --surface in each theme: the browser chrome follows the OS like the
+       page does. The manifest's single theme_color is the one place that
+       rule cannot reach (§9.3). -->
+  <meta name="theme-color" content="#EFF1F0" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#212A2E" media="(prefers-color-scheme: dark)">
 </head>
 <body>
   <main>
@@ -17,7 +21,7 @@
     </section>
 
     <section id="capture" hidden>
-      <input id="text" type="text" placeholder="Remind me to…" enterkeyhint="done">
+      <input id="text" type="text" placeholder="Remind me to…" enterkeyhint="done" maxlength="1000">
       <div id="chips"></div>
     </section>
 

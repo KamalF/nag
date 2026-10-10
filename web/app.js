@@ -203,6 +203,8 @@ function renderChips() {
     b.addEventListener('click', () => createReminder(p.key));
     chips.append(b);
   }
+  // a browser may restore the field's value across a reload
+  updateChips();
   $('text').addEventListener('input', updateChips);
   $('text').addEventListener('keydown', (e) => {
     // isComposing: Enter that commits an IME composition is not a save
@@ -670,7 +672,7 @@ function consumeFocusParam() {
 // of anything (§7.6). Never fall back to flashing the first row.
 function flashRow(id) {
   clearFlash();
-  pendingFlash = { id: String(id), deadline: Date.now() + FLASH_WAIT_MS };
+  pendingFlash = { id: String(id), deadline: performance.now() + FLASH_WAIT_MS };
   applyPendingFlash();
 }
 
@@ -682,7 +684,7 @@ function flashRow(id) {
 // cleared elsewhere, and a second chance for one whose render lost a race.
 function applyPendingFlash() {
   if (!pendingFlash) return;
-  if (Date.now() > pendingFlash.deadline) {
+  if (performance.now() > pendingFlash.deadline) {
     pendingFlash = null;
     return;
   }

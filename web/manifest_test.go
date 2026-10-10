@@ -65,9 +65,12 @@ func TestManifestPinnedValues(t *testing.T) {
 		if icon.Purpose != "" {
 			sizes += " " + icon.Purpose
 		}
-		if want[icon.Src] != sizes {
-			t.Errorf("icon %s = %q, want %q", icon.Src, sizes, want[icon.Src])
+		if wantSizes, ok := want[icon.Src]; !ok {
+			t.Errorf("icon %s is unexpected or listed twice", icon.Src)
+		} else if wantSizes != sizes {
+			t.Errorf("icon %s = %q, want %q", icon.Src, sizes, wantSizes)
 		}
+		delete(want, icon.Src) // a duplicate must not stand in for a missing icon
 		if icon.Type != "image/png" {
 			t.Errorf("icon %s type = %q, want image/png", icon.Src, icon.Type)
 		}
