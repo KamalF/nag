@@ -1,6 +1,10 @@
 package notify
 
-import "testing"
+import (
+	"os"
+	"regexp"
+	"testing"
+)
 
 // The §9.10 case table, every row. Whatever renders as literal text
 // client-side must stay byte-identical here; only a real link collapses
@@ -35,5 +39,22 @@ func TestFlattenLinks(t *testing.T) {
 				t.Errorf("flattenLinks(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
+	}
+}
+
+// §9.10: the parser exists twice, here and in app.js's renderer, and both
+// must be the one regex. The JS literal is read from the file the binary
+// embeds, so a drift on either side fails here.
+func TestClientLinkRegexMatchesFlattenLinks(t *testing.T) {
+	raw, err := os.ReadFile("../../web/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`(?m)^const LINK = /(.*)/g;$`).FindSubmatch(raw)
+	if m == nil {
+		t.Fatal("no `const LINK = /…/g;` in web/app.js")
+	}
+	if got, want := string(m[1]), linkPattern.String(); got != want {
+		t.Errorf("app.js LINK = %s, flattenLinks uses %s", got, want)
 	}
 }

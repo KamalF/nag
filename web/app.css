@@ -146,6 +146,13 @@ button:not(:disabled):active { transform: scale(.96); }
   box-shadow: inset 2px 0 0 var(--late);
 }
 
+/* [label](url) renders as a real anchor; amber stays reserved for
+   lateness and never means "clickable" (§9.10) */
+.row .txt a {
+  color: var(--ink); cursor: pointer;
+  text-decoration: underline; text-decoration-color: var(--ink-faint); text-underline-offset: 2px;
+}
+
 /* the editor is the capture bar inside the row; the row's own time stays
    beside it (§9.6), and the text and actions step aside */
 .row .txt, .row .when { cursor: text; }

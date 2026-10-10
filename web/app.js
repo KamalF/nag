@@ -926,6 +926,45 @@ function rowElement(id) {
   return document.querySelector(`li[data-id="${CSS.escape(String(id))}"]`);
 }
 
+// --- reminder text: one markdown link form (§9.10) ---
+
+// LINK is the whole grammar, and the same regex as the server's
+// flattenLinks (a Go test pins the two): [label](target), label non-empty
+// with no brackets, target with no whitespace and no ")".
+const LINK = /\[([^\[\]]+)\]\(([^\s)]*)\)/g;
+
+// renderText walks the matches and appends nodes — text nodes between, an
+// anchor for each eligible link — so no markup is ever parsed: no innerHTML
+// anywhere (§9.7). A match that is not eligible is emitted whole, brackets
+// and all.
+function renderText(el, text) {
+  el.replaceChildren();
+  let last = 0;
+  for (const m of text.matchAll(LINK)) {
+    const [whole, label, target] = m;
+    if (!rendersAsLink(target)) continue;
+    el.append(document.createTextNode(text.slice(last, m.index)));
+    const a = document.createElement('a');
+    a.textContent = label;
+    a.href = target;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    el.append(a);
+    last = m.index + whole.length;
+  }
+  el.append(document.createTextNode(text.slice(last)));
+}
+
+// rendersAsLink is the eligibility gate, the same one flattenLinks applies:
+// scheme http or https, read off the prefix, and no "(" — a paren-bearing
+// URL would have been cut at the first ")", a link that looks right and
+// 404s, so it stays visible as raw markdown instead (§9.10).
+function rendersAsLink(target) {
+  if (target.includes('(')) return false;
+  const lower = target.toLowerCase();
+  return lower.startsWith('http:') || lower.startsWith('https:');
+}
+
 // --- the keyed list (§9.2) ---
 
 // rows maps a reminder id to its row: the li and the parts a pass updates.
@@ -989,7 +1028,7 @@ function updateRow(r, late) {
   }
   if (row.text !== r.text) {
     row.text = r.text;
-    row.txt.textContent = r.text;
+    renderText(row.txt, r.text);
   }
   row.when.textContent = whenText(r.due_at);
   return row;
