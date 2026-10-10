@@ -14,31 +14,40 @@
   <meta name="theme-color" content="#212A2E" media="(prefers-color-scheme: dark)">
 </head>
 <body>
-  <main>
-    <section id="login" hidden>
-      <input id="token" type="password" placeholder="Token" autocomplete="current-password">
-      <button id="login-btn">Log in</button>
-      <p id="login-error" role="alert"></p>
+  <main class="app">
+    <section id="login" class="login" hidden>
+      <input id="token" type="password" placeholder="Token" aria-label="Token" autocomplete="current-password">
+      <button id="login-btn" class="act pri" type="button">Log in</button>
+      <p id="login-error" class="login-error" role="alert"></p>
     </section>
 
-    <section id="capture" hidden>
-      <input id="text" type="text" placeholder="Remind me to…" enterkeyhint="done" maxlength="1000">
-      <div id="chips"></div>
+    <section id="capture" class="capture" hidden>
+      <input id="text" type="text" placeholder="What should come back to you?" aria-label="New reminder"
+             enterkeyhint="done" maxlength="1000" autocomplete="off">
+      <div id="chips" class="chips"></div>
     </section>
 
     <!-- §9.2: absent entirely when push is working, which is its steady
          state. It is above the lists because it is the one thing whose
          absence you cannot notice. -->
-    <section id="notify-slot" hidden></section>
+    <section id="notify-slot" class="slot" hidden></section>
 
-    <section id="overdue-zone" hidden>
-      <h2>Needs you now (<span id="overdue-count">0</span>)</h2>
-      <ul id="overdue"></ul>
+    <section id="overdue-zone" class="zone" hidden>
+      <h2>Needs you now <em id="overdue-count">0</em></h2>
+      <ul id="overdue" class="rows"></ul>
     </section>
 
-    <section id="later-zone" hidden>
-      <h2>Later</h2>
-      <ul id="later"></ul>
+    <div id="divider" class="divider" hidden></div>
+
+    <section id="later-zone" class="zone" hidden>
+      <h2>Waiting quietly</h2>
+      <ul id="later" class="rows"></ul>
+    </section>
+
+    <!-- §9.2: the most-seen screen — the reward, not an error -->
+    <section id="empty" class="empty" hidden>
+      <p>Nothing waiting.</p>
+      <span>Type above and pick when it should come back.</span>
     </section>
   </main>
   <script src="/app.js"></script>

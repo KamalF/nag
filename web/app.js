@@ -1,7 +1,7 @@
 'use strict';
 
-// M1 minimal UI (§9.2 behaviourally, zero styling). No client-side
-// persistence anywhere (§12): the server state is the state.
+// Nag's page (§9). No client-side persistence anywhere (§12): the server
+// state is the state.
 
 const $ = (id) => document.getElementById(id);
 
@@ -123,8 +123,9 @@ async function init() {
   }
   renderChips();
   $('capture').hidden = false;
-  $('overdue-zone').hidden = false;
-  $('later-zone').hidden = false;
+  // §9.2: autofocus on desktop only — on a phone it opens the keyboard over
+  // the list on every load, which fights Goal 4 where glanceability matters
+  if (matchMedia('(min-width: 701px) and (hover: hover)').matches) $('text').focus();
   renderState(state);
   armPoll();
   document.addEventListener('visibilitychange', onVisibilityChange);
@@ -198,6 +199,8 @@ function renderChips() {
   const chips = $('chips');
   for (const p of config.presets) { // file order is UI order (§5.4)
     const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip';
     b.textContent = p.label;
     b.disabled = true;
     b.addEventListener('click', () => createReminder(p.key));
@@ -280,6 +283,8 @@ async function renderNotifySlot(pushSubscribed) {
   if (want === 'absent') return;
   if (want === 'button') {
     const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'act pri';
     button.textContent = 'Turn on notifications';
     button.addEventListener('click', turnOnNotifications);
     slot.append(button);
@@ -545,8 +550,16 @@ function armDueTimer(state) {
 
 function renderState(state) {
   $('overdue-count').textContent = state.overdue_count;
-  renderZone($('overdue'), state.overdue);
-  renderZone($('later'), state.later);
+  renderZone($('overdue'), state.overdue, true);
+  renderZone($('later'), state.later, false);
+  // a zone heading is hidden entirely when its list is empty, and the empty
+  // state replaces both (§9.2)
+  const hasOverdue = state.overdue.length > 0;
+  const hasLater = state.later.length > 0;
+  $('overdue-zone').hidden = !hasOverdue;
+  $('later-zone').hidden = !hasLater;
+  $('divider').hidden = !(hasOverdue && hasLater);
+  $('empty').hidden = hasOverdue || hasLater;
   // driven by the same render pass as the lists, which is what keeps all
   // three outputs correct after a 304 too (§9.3)
   setBadge(state.overdue_count);
@@ -721,24 +734,61 @@ function rowElement(id) {
   return document.querySelector(`li[data-id="${CSS.escape(String(id))}"]`);
 }
 
-function renderZone(ul, rows) {
+function renderZone(ul, rows, late) {
   ul.replaceChildren();
   for (const r of rows) {
-    const label = document.createElement('span');
-    label.textContent = r.text + ' — ' + new Date(r.due_at * 1000).toLocaleString();
-    const clear = document.createElement('button');
-    clear.textContent = 'Clear';
-    clear.addEventListener('click', async () => {
-      await fetch('/api/reminders/' + r.id + '/done', { method: 'POST' });
-      refreshState();
-    });
     const li = document.createElement('li');
+    li.className = 'row ' + (late ? 'late' : 'later');
     li.dataset.id = r.id; // what §9.5's focus-reminder finds the row by
-    li.append(label, ' ', clear);
+
+    const txt = document.createElement('span');
+    txt.className = 'txt';
+    txt.textContent = r.text;
+    const when = document.createElement('span');
+    when.className = 'when';
+    when.textContent = new Date(r.due_at * 1000).toLocaleString();
+
+    const acts = document.createElement('span');
+    acts.className = 'acts';
+    acts.append(actionButton('Clear', late, () => mutate('/api/reminders/' + r.id + '/done', 'POST')));
+    // Re-snooze chips belong to the overdue zone only: an offset preset
+    // resolves from now (§4.1), so "30 min" on a row waiting for next Monday
+    // would quietly pull it forward by six days (§9.2).
+    if (late) {
+      for (const p of config.presets) {
+        if (!p.quick) continue;
+        acts.append(actionButton(p.label, false, () =>
+          mutate('/api/reminders/' + r.id, 'PATCH', { preset: p.key })));
+      }
+    }
+
+    li.append(txt, when, acts);
     ul.append(li);
     // a rebuild inside the 2.4 s must not drop the highlight it is showing
     if (litRow === String(r.id)) paintFlash(li);
   }
+}
+
+function actionButton(label, primary, onClick) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = primary ? 'act pri' : 'act';
+  b.textContent = label;
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+// mutate sends one row action and follows it with a /api/state fetch: the
+// response makes the row correct, the refetch makes the badge, the title and
+// the zone split correct (§8.2).
+async function mutate(path, method, body) {
+  const init = { method };
+  if (body !== undefined) {
+    init.headers = { 'Content-Type': 'application/json' };
+    init.body = JSON.stringify(body);
+  }
+  await fetch(path, init);
+  refreshState();
 }
 
 init();

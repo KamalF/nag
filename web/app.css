@@ -84,3 +84,101 @@ button:not(:disabled):active { transform: scale(.96); }
   button { transition: none; }
   button:not(:disabled):active { transform: none; }
 }
+
+/* ============ layout (§9.2) ============ */
+/* One column. The page is the app: no frame around it. */
+.app { max-width: 760px; margin: 0 auto; padding-bottom: 40px; }
+
+/* ---- capture bar ---- */
+.capture, .login { padding: var(--pad) var(--pad) 20px; }
+.capture input, .login input {
+  display: block; width: 100%; padding: 13px 16px; margin: 0 0 14px;
+  font: 400 16px/1.4 var(--body); color: var(--ink);
+  background: var(--field); border: 1px solid var(--edge); border-radius: 12px;
+}
+.capture input::placeholder, .login input::placeholder { color: var(--ink-quiet); }
+.login-error { margin: 10px 0 0; color: var(--late); font-size: 14px; }
+.login-error:empty { display: none; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 7px; }
+/* no pressed state: a chip saves on click, it is not a selection (§9.2) */
+.chip {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  font: 13px/1 var(--body); padding: 8px 14px; border-radius: 999px;
+  background: var(--chip); color: var(--chip-ink); border: 1px solid transparent;
+}
+
+/* ---- notification slot ---- */
+.slot { padding: 0 var(--pad) 14px; }
+.slot p { margin: 0; font-size: 13.5px; color: var(--ink-quiet); }
+
+/* ---- zones ---- */
+.zone { padding: 6px var(--pad) var(--pad); }
+.zone h2 {
+  font: italic 400 14px/1 var(--body); color: var(--ink-quiet);
+  margin: 18px 0 10px; display: flex; align-items: baseline; gap: 8px;
+}
+.zone h2 em { font-style: normal; font-size: 11.5px; letter-spacing: .04em; color: var(--late); }
+.rows { list-style: none; margin: 0; padding: 0; }
+.divider { height: 1px; background: var(--edge); margin: 0 var(--pad); }
+
+/* ---- row anatomy: text, time, actions ---- */
+.row { display: flex; align-items: baseline; gap: 16px; padding: 11px 2px; border-radius: 10px; }
+.row .txt { flex: 1; min-width: 0; font-size: 15.5px; overflow-wrap: anywhere; }
+.row .when {
+  font: italic 400 14.5px/1.3 var(--time); color: var(--ink-quiet);
+  white-space: nowrap; flex: none;
+}
+.row .acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; flex: none; }
+.act {
+  font: 11.5px/1 var(--body); padding: 6px 12px; border-radius: 999px;
+  border: 1px solid var(--edge); color: var(--ink-quiet);
+  background: transparent; white-space: nowrap;
+}
+.act.pri { border-color: var(--ink-quiet); color: var(--ink); }
+
+/* upcoming recedes; only what is due carries full contrast (§9.1) */
+.row.later .txt { color: var(--ink-quiet); }
+.row.late .txt { color: var(--ink); }
+.row.late .when { color: var(--late); font-style: normal; font-weight: 600; }
+.row.late {
+  background: var(--surface-lift); padding-left: 14px; padding-right: 12px;
+  box-shadow: inset 2px 0 0 var(--late);
+}
+
+/* Desktop reveals the actions on :hover and :focus-within. :focus-within is
+   not a nicety: with :hover alone, tabbing into a row reveals nothing, and
+   every action behind the reveal is focusable but invisible (§9.2). Opacity
+   rather than display, so the hidden buttons stay in the tab order. */
+@media (hover: hover) and (min-width: 701px) {
+  .row .acts { opacity: 0; transition: opacity .12s ease; }
+  .row:hover .acts, .row:focus-within .acts { opacity: 1; }
+}
+
+/* ---- empty state ---- */
+.empty { padding: 40px var(--pad) 46px; text-align: center; }
+.empty p { margin: 0 0 4px; font-size: 15.5px; color: var(--ink); }
+.empty span { font: italic 14px var(--time); color: var(--ink-quiet); }
+
+/* ============ mobile (§9.9) ============ */
+/* Rows wrap: the text gets the full width, then the time bottom-left and
+   the actions bottom-right. Tap targets at least 40px; the capture input
+   stays at 16px so iOS does not zoom on focus. */
+@media (max-width: 700px) {
+  :root { --pad: 18px; }
+  .capture input, .login input { padding: 12px 14px; margin-bottom: 12px; font-size: 16px; }
+  .chips { gap: 8px; }
+  .chip { padding: 11px 15px; font-size: 13.5px; min-height: 40px; }
+  .row { flex-wrap: wrap; gap: 7px 12px; padding: 12px 2px; }
+  .row .txt { flex: 0 0 100%; font-size: 16px; line-height: 1.35; }
+  .row .when { font-size: 14px; }
+  .row .acts { margin-left: auto; gap: 8px; }
+  .act { padding: 9px 14px; font-size: 12px; min-height: 40px; }
+  .row.late { padding: 13px 12px 13px 14px; }
+  .zone { padding-bottom: 20px; }
+  .zone h2 { margin: 16px 0 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row .acts { transition: none; }
+}
