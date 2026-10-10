@@ -282,6 +282,7 @@ func TestVAPIDSubjectClaimIsOneMailto(t *testing.T) {
 	} {
 		t.Run(subject, func(t *testing.T) {
 			p := NewPushSender(st, slog.New(slog.NewTextHandler(io.Discard, nil)), public, private, subject)
+			p.client = srv.Client() // pushClient refuses loopback
 			if res := p.SendTo(t.Context(), 5*time.Second, []byte(`{"n":1,"texts":["x"]}`), sub); res.Err != "" {
 				t.Fatalf("send failed: %+v", res)
 			}
@@ -304,5 +305,47 @@ func TestVAPIDSubjectClaimIsOneMailto(t *testing.T) {
 				t.Errorf("sub claim = %q, want %q", claims.Sub, want)
 			}
 		})
+	}
+}
+
+// A push endpoint can only reach a public address (§7.5): everything a
+// token holder could aim the server at inside its own network is refused
+// at the dial, after DNS.
+func TestRefuseNonPublic(t *testing.T) {
+	for address, refused := range map[string]bool{
+		"127.0.0.1:443":          true,
+		"10.0.0.5:443":           true,
+		"172.16.0.1:443":         true,
+		"192.168.1.1:443":        true,
+		"169.254.169.254:80":     true, // cloud metadata
+		"100.100.100.100:443":    true, // Tailscale / CGNAT
+		"0.0.0.0:443":            true,
+		"[::1]:443":              true,
+		"[fd00::1]:443":          true,
+		"[fe80::1]:443":          true,
+		"[::ffff:10.0.0.1]:443":  true,
+		"142.250.74.106:443":     false, // fcm.googleapis.com
+		"[2a00:1450:4007::]:443": false,
+	} {
+		err := refuseNonPublic("tcp", address, nil)
+		if refused != errors.Is(err, errNonPublicAddress) {
+			t.Errorf("refuseNonPublic(%s) = %v, want refused %v", address, err, refused)
+		}
+	}
+}
+
+// The guard is on the client every send uses: a loopback endpoint is
+// refused before a byte is sent, classified as refused, and a redirect is
+// returned as the response rather than followed.
+func TestPushClientStaysPublic(t *testing.T) {
+	reached := false
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true }))
+	defer srv.Close()
+	_, err := pushClient.Post(srv.URL, "application/octet-stream", nil)
+	if !errors.Is(err, errNonPublicAddress) || classifySendError(err) != "refused" || reached {
+		t.Errorf("loopback endpoint: err %v, class %q, reached %v", err, classifySendError(err), reached)
+	}
+	if pushClient.CheckRedirect(nil, nil) != http.ErrUseLastResponse {
+		t.Error("the push client follows redirects")
 	}
 }

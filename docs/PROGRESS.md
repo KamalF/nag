@@ -163,4 +163,5 @@ one-step-one-commit index.
 | `f069b6d` | this file: the second post-M4 review |
 | `d478630` | §7.4 mask: no path, host only when dotted — gotify/ifttt/wecom secrets no longer printed (owner decision) |
 | `cc146d4` | §10.2 same-origin rule via `http.CrossOriginProtection` — closes the sibling-subdomain CSRF case (owner decision) |
-| (this commit) | §7.2 channel endpoints trusted; `mem_limit: 256m` bounds a runaway reply (owner decision) |
+| `4ddab42` | §7.2 channel endpoints trusted; `mem_limit: 256m` bounds a runaway reply (owner decision) |
+| (this commit) | §7.1 push sends reach public addresses only, no redirects — closes the subscribe SSRF follow-up (owner decision) |

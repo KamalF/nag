@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"syscall"
 	"time"
@@ -28,6 +29,8 @@ type PushSender struct {
 	// sendFn is webpush.SendNotificationWithContext, injectable so tests
 	// can play every rung of the ladder without a push service.
 	sendFn func(ctx context.Context, payload []byte, sub *webpush.Subscription, opts *webpush.Options) (*http.Response, error)
+	// client is pushClient; a test sending to a loopback server swaps it
+	client webpush.HTTPClient
 }
 
 func NewPushSender(st *store.Store, log *slog.Logger, vapidPublic, vapidPrivate, subject string) *PushSender {
@@ -38,6 +41,7 @@ func NewPushSender(st *store.Store, log *slog.Logger, vapidPublic, vapidPrivate,
 		vapidPrivate: vapidPrivate,
 		subject:      librarySubscriber(subject),
 		sendFn:       webpush.SendNotificationWithContext,
+		client:       pushClient,
 	}
 }
 
@@ -57,6 +61,46 @@ func librarySubscriber(subject string) string {
 		return "https:" + rest
 	}
 	return subject
+}
+
+// pushClient is the HTTP client every push send goes through. An endpoint
+// is whatever URL a subscribe call handed over (§7.5), so without a guard
+// it would make the server POST wherever a token holder pointed it — a
+// private address on the VPS's network, or through a redirect, a metadata
+// service — and the push test's per-endpoint status would say what
+// answered. So the dial refuses any address that is not public, checked
+// after DNS so a public name resolving to 10.x is caught too, and a
+// redirect is never followed: a push service answers, it does not redirect,
+// and a 3xx lands on the ladder as http 3xx. No proxy either, since a
+// proxy would make the dialled address the proxy's.
+var pushClient = &http.Client{
+	Transport: &http.Transport{
+		DialContext:         (&net.Dialer{Control: refuseNonPublic}).DialContext,
+		ForceAttemptHTTP2:   true,
+		TLSHandshakeTimeout: 10 * time.Second,
+	},
+	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+}
+
+// errNonPublicAddress is the dial refusal; it classifies as refused.
+var errNonPublicAddress = errors.New("push endpoint resolves to a non-public address")
+
+// sharedAddressSpace is 100.64.0.0/10 (RFC 6598): carrier-grade NAT, and
+// the range Tailscale hands out — private in practice, not to netip.
+var sharedAddressSpace = netip.MustParsePrefix("100.64.0.0/10")
+
+// refuseNonPublic is the dialer's Control hook: address is the resolved
+// ip:port about to be connected to.
+func refuseNonPublic(_, address string, _ syscall.RawConn) error {
+	addrPort, err := netip.ParseAddrPort(address)
+	if err != nil {
+		return errNonPublicAddress
+	}
+	ip := addrPort.Addr().Unmap()
+	if !ip.IsGlobalUnicast() || ip.IsPrivate() || sharedAddressSpace.Contains(ip) {
+		return errNonPublicAddress
+	}
+	return nil
 }
 
 // deleteTimeout bounds a deletion whose caller has no deadline of its own —
@@ -102,6 +146,7 @@ func (p *PushSender) SendTo(ctx context.Context, perSend time.Duration, payload 
 		VAPIDPrivateKey: p.vapidPrivate,
 		Urgency:         webpush.UrgencyHigh,
 		Topic:           "nag", // constant: at most one push ever pending per device (§7.1)
+		HTTPClient:      p.client,
 	})
 	endpoint := TruncateEndpoint(sub.Endpoint)
 	if err != nil {
@@ -180,7 +225,7 @@ func classifySendError(err error) string {
 		return "timeout"
 	case errors.As(err, &dnsErr):
 		return "dns"
-	case errors.Is(err, syscall.ECONNREFUSED):
+	case errors.Is(err, syscall.ECONNREFUSED), errors.Is(err, errNonPublicAddress):
 		return "refused"
 	default:
 		return "send failed"
