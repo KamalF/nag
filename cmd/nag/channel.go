@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/url"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/KamalF/nag/internal/notify"
@@ -92,7 +94,7 @@ func channelAdd(ctx context.Context, st *store.Store, name, rawURL string, stdou
 		return fmt.Errorf("channel name %q must match %s", name, slugPattern)
 	}
 	if err := notify.ValidateChannelURL(rawURL); err != nil {
-		return fmt.Errorf("shoutrrr cannot use this URL: %v", err)
+		return fmt.Errorf("shoutrrr cannot use this URL: %s", redactURL(err.Error(), rawURL))
 	}
 	if err := st.AddChannel(ctx, name, rawURL); err != nil {
 		if errors.Is(err, store.ErrChannelExists) {
@@ -193,6 +195,45 @@ func channelTest(ctx context.Context, st *store.Store, name string, stdout io.Wr
 	}
 	fmt.Fprintf(stdout, "%s: sent%s\n", name, note)
 	return nil
+}
+
+// redactURL removes the URL and its secret-bearing parts from a library
+// message before it is printed. shoutrrr's parse errors routinely embed the
+// URL whole, or just its token ("invalid telegram token: …"), and no URL is
+// ever printed unmasked (§7.4) — not even back to the operator who typed it,
+// since `compose run` output is captured wherever it goes. What is left is
+// the parse error itself, which is what add must name.
+func redactURL(message, rawURL string) string {
+	secrets := []string{rawURL}
+	if u, err := url.Parse(rawURL); err == nil {
+		if u.User != nil {
+			secrets = append(secrets, u.User.String(), u.User.Username())
+			if p, ok := u.User.Password(); ok {
+				secrets = append(secrets, p)
+			}
+		}
+		secrets = append(secrets, u.RawQuery)
+		for _, values := range u.Query() {
+			secrets = append(secrets, values...)
+		}
+		secrets = append(secrets, strings.Split(strings.Trim(u.Path, "/"), "/")...)
+	} else if _, rest, ok := strings.Cut(rawURL, "://"); ok {
+		// unparseable: whatever follows the scheme may be a credential
+		secrets = append(secrets, rest)
+	}
+	// shoutrrr prints values through %q, so each secret is also looked for
+	// in its quoted form — a backslash or quote inside it is escaped there
+	for _, secret := range secrets {
+		secrets = append(secrets, strings.Trim(strconv.Quote(secret), `"`))
+	}
+	// longest first, so a whole URL is replaced before its parts
+	slices.SortFunc(secrets, func(a, b string) int { return len(b) - len(a) })
+	for _, secret := range secrets {
+		if len(secret) >= 3 {
+			message = strings.ReplaceAll(message, secret, "…")
+		}
+	}
+	return message
 }
 
 // maskChannelURL is §7.4's pinned mask: scheme, host, and the last path

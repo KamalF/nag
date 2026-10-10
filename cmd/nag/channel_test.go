@@ -86,6 +86,30 @@ func TestChannelAddRefusals(t *testing.T) {
 	}
 }
 
+// No URL is printed unmasked even on add's refusal: shoutrrr's parse
+// errors embed the URL whole, or just its token.
+func TestChannelAddRefusalHidesTheURL(t *testing.T) {
+	for _, raw := range []string{
+		"ntfy://user:tok_SECRET@ntfy.example.com:badport/alerts",
+		"ntfy://user:tok_SECRET%zz@ntfy.example.com/alerts",
+		"telegram://tok_SECRET@telegram",
+		`ntfy://host/topic?tokn=tk%5Ctok_SECRET`,
+		`ntfy://host/topic?tokn=tk%22tok_SECRET`,
+	} {
+		cli := newChannelCLI(t)
+		code, _, stderr := cli.run("add", "x", raw)
+		if code != 1 {
+			t.Errorf("add %q = %d, want a refusal", raw, code)
+		}
+		if strings.Contains(stderr, "tok_SECRET") {
+			t.Errorf("refusal printed the secret: %q", stderr)
+		}
+		if !strings.Contains(stderr, "shoutrrr cannot use this URL") {
+			t.Errorf("refusal does not name the parse error: %q", stderr)
+		}
+	}
+}
+
 // §7.4's mask, pinned: scheme, host, last path segment; userinfo and query
 // always elided behind a literal ellipsis.
 func TestMaskChannelURL(t *testing.T) {
