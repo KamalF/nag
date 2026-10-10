@@ -108,6 +108,17 @@ button:not(:disabled):active { transform: scale(.96); }
   background: var(--chip); color: var(--chip-ink); border: 1px solid transparent;
 }
 
+/* ---- channel selector: toggles, unlike the save-on-click presets ---- */
+.channels { margin-top: 10px; }
+.channels-toggle {
+  border: 0; background: transparent; padding: 4px 0; margin-bottom: 6px;
+  font-size: 12.5px; color: var(--ink-quiet); text-decoration: underline;
+  text-decoration-color: var(--ink-faint); text-underline-offset: 2px;
+}
+.chip.channel[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.chip.channel.muted { opacity: .55; }
+.chip.channel.muted[aria-pressed="true"] { background: var(--chip-ink); color: var(--surface); }
+
 /* ---- notification slot ---- */
 .slot { padding: 0 var(--pad) 14px; }
 .slot p { margin: 0; font-size: 13.5px; color: var(--ink-quiet); }

@@ -38,6 +38,10 @@ const PLAIN_FAVICON = '/icons/32.png';
 
 let config = null;
 
+// channels is /api/channels — [{name, enabled}] ORDER BY name, which is the
+// chip order in both places it is drawn (§9.2). The URL is never in it.
+let channels = [];
+
 // The poll's state. stateETag and lastState are a pair: the 304 path
 // re-renders from the list already in memory, so an ETag stored without the
 // body it describes would outlive the wrong render (§9.3).
@@ -114,6 +118,9 @@ async function init() {
     const cfgRes = await fetch('/api/config');
     if (!cfgRes.ok) throw new Error('config ' + cfgRes.status);
     config = await cfgRes.json();
+    const chRes = await fetch('/api/channels');
+    if (!chRes.ok) throw new Error('channels ' + chRes.status);
+    channels = await chRes.json();
   } catch {
     // a boot that fails must retry, not brick — full toasts are M3
     setTimeout(init, VISIBLE_POLL_MS);
@@ -199,7 +206,7 @@ async function submitToken() {
 // input and the preset chips in file order (§5.4). A chip carries its own
 // answer and saves on the click (Goal 1); Enter means whatever the surface
 // saves (§9.4), so each caller says what that is.
-function createBar({ value = '', placeholder = '', label, onTime, onEnter, pickFrom }) {
+function createBar({ value = '', placeholder = '', label, onTime, onEnter, pickFrom, attached }) {
   const el = document.createElement('div');
   el.className = 'bar';
   const input = document.createElement('input');
@@ -215,11 +222,19 @@ function createBar({ value = '', placeholder = '', label, onTime, onEnter, pickF
   const chips = document.createElement('div');
   chips.className = 'chips';
   el.append(input, chips);
+  // attached is the row's extra_channels in an editor, undefined in the
+  // capture bar; the selector decides on its own whether to render at all
+  const selector = channelSelector(attached);
+  if (selector) el.append(selector.el);
 
   const bar = {
     el,
     input,
     text: () => input.value.trim(),
+    // the full list of what the channel chips show selected, orphans
+    // included — an editor always sends it, never omitting the key (§9.2)
+    selectedChannels: () => selector?.selected() ?? [],
+    resetChannels: () => selector?.reset(),
     // every chip is disabled while the input is empty or whitespace-only:
     // a chip that visibly isn't ready beats a toast saying so (§9.2)
     updateEnabled() {
@@ -259,6 +274,83 @@ function createBar({ value = '', placeholder = '', label, onTime, onEnter, pickF
   return bar;
 }
 
+// channelSelector is §9.2's "Also send to": a toggle that expands a row
+// of channel chips. The capture bar renders it only when the catalogue is
+// non-empty — fan-out is opt-in and a fresh install has no channels. An
+// editor renders it whenever the catalogue is non-empty *or* the row
+// carries names: with `nag channel rm` on the last channel, an unrendered
+// affordance would send [] on every save and silently wipe the orphans the
+// server exists to preserve.
+//
+// "Greyed and unselectable" is a rule about adding, never removing:
+// - a disabled channel already on the row renders selected and greyed, and
+//   can be deselected — a mute must not make a name impossible to remove;
+// - a name the catalogue does not list (an orphan) gets a greyed chip of its
+//   own, selected; deselected, it cannot be re-selected — you may carry an
+//   orphan forward, never introduce one (§8.3).
+function channelSelector(attached) {
+  const names = new Set(attached ?? []);
+  const known = new Set(channels.map((c) => c.name));
+  const orphans = [...names].filter((n) => !known.has(n));
+  if (channels.length === 0 && orphans.length === 0) return null;
+
+  const el = document.createElement('div');
+  el.className = 'channels';
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'channels-toggle';
+  toggle.textContent = 'Also send to';
+  const row = document.createElement('div');
+  row.className = 'chips channel-chips';
+  el.append(toggle, row);
+
+  const chips = [];
+  const add = (name, selectable) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip channel' + (selectable ? '' : ' muted');
+    b.textContent = name;
+    const chip = { name, selectable, button: b, selected: names.has(name) };
+    const paint = () => {
+      b.setAttribute('aria-pressed', String(chip.selected));
+      // deselecting always works; selecting needs an enabled, known channel
+      b.disabled = !chip.selected && !chip.selectable;
+    };
+    b.addEventListener('click', () => {
+      if (!chip.selected && !chip.selectable) return;
+      chip.selected = !chip.selected;
+      paint();
+    });
+    chip.paint = paint;
+    paint();
+    chips.push(chip);
+    row.append(b);
+  };
+  for (const c of channels) add(c.name, c.enabled);
+  for (const name of orphans) add(name, false);
+
+  const setOpen = (open) => {
+    toggle.setAttribute('aria-expanded', String(open));
+    row.hidden = !open;
+  };
+  // open when the row already carries names, so they are visible
+  setOpen(names.size > 0);
+  toggle.addEventListener('click', () => setOpen(row.hidden));
+
+  return {
+    el,
+    selected: () => chips.filter((c) => c.selected).map((c) => c.name),
+    // after each save the selection resets: nothing is remembered (§12)
+    reset() {
+      for (const c of chips) {
+        c.selected = false;
+        c.paint();
+      }
+      setOpen(false);
+    },
+  };
+}
+
 let capture = null;
 
 function buildCapture() {
@@ -281,11 +373,12 @@ async function createReminder(timing) {
   const res = await fetch('/api/reminders', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, ...timing }),
+    body: JSON.stringify({ text, extra_channels: capture.selectedChannels(), ...timing }),
   });
   if (res.status !== 201) return false;
   capture.input.value = '';
   capture.updateEnabled();
+  capture.resetChannels();
   refreshState(); // every successful mutation refetches (§8.2)
   return true;
 }
@@ -309,6 +402,7 @@ function openEditor(row) {
     onEnter: () => saveEdit(row, bar, {}),
     // the picker opens on the stored moment when it is still ahead (§9.6)
     pickFrom: () => row.reminder.due_at,
+    attached: row.reminder.extra_channels,
   });
   editor = { row, bar };
   row.li.classList.add('editing');
@@ -348,7 +442,7 @@ async function saveEdit(row, bar, timing) {
   const res = await fetch('/api/reminders/' + row.id, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, extra_channels: row.reminder.extra_channels, ...timing }),
+    body: JSON.stringify({ text, extra_channels: bar.selectedChannels(), ...timing }),
   });
   if (!res.ok) return false;
   if (editor?.row === row) closeEditor();
