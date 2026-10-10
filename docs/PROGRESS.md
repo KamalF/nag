@@ -94,6 +94,28 @@ claim going out as `mailto:mailto:…`.
 | [x] | 49 | `nag.env.example` and README | `7c8ea59` |
 | [B] | 50 | **M4 checkpoint / final acceptance** (no commit) | needs the VPS, DNS and phones. Local stand-in done 2026-10-10: the image builds, refuses to start without keys, boots with them, writes the default config, answers healthcheck, reloads on HUP and stops cleanly |
 
+### Review after M3 + M4
+
+A `/review-loop` over everything since `887f5e0`, up to five reviewers per
+round (frontend, notify, CLI/config/http, security, packaging and docs).
+Accepted blocker/should-fix by round: 8, 2, 4, 5. It was stopped after
+round 4 as stuck rather than converged: the channel-send bound in
+`internal/notify/channel.go` and the frontend's editor/focus handling drew
+new findings every round, each fix exposing the next. Both are fixed and
+tested as of round 4, but no fresh round has reviewed the last fixes, and
+the simplify pass has not run.
+
+**Open questions for the owner** (spec decisions, not implemented):
+1. §7.4's pinned `list` mask prints the whole secret for services that keep
+   it in the last path segment or the host (gotify's token, opsgenie's key,
+   ifttt's webhook key).
+2. §10.2's bodyless-mutation exemption leans on `SameSite=Lax`, which does
+   not stop a page on a sibling subdomain (same site) from auto-submitting
+   an empty form to `/done`, `/undone` or `/api/push/test`.
+3. A channel endpoint can stream an unbounded response body into
+   shoutrrr's own `io.ReadAll`; bounding it means wrapping each service's
+   transport, which breaks the services that configure their own client.
+
 ## Commits outside the plan
 
 Corrections and cross-cutting passes belong here, so the table above stays a
@@ -123,3 +145,9 @@ one-step-one-commit index.
 | `e3858eb` | whole-codebase review: httpapi — body decoding, login queue, one clock per PATCH |
 | `f094500` | whole-codebase review: boot — no key in the FATAL line, located TOML errors |
 | `a973120` | whole-codebase review: web — small frontend fixes |
+| `887f5e0` | this file: the whole-codebase review |
+| `c2daa20` | this file: M4 code complete |
+| `52f5744` | post-M4 review: notify — abandoned channel sends bounded, honest verdicts |
+| `22dd728` | post-M4 review: cli — no URL in `channel add`'s refusal |
+| `d35dea5` | post-M4 review: web — editor, focus and toast races |
+| `f208f71` | post-M4 review: README fixes, SPEC §10.3 backup wording |
