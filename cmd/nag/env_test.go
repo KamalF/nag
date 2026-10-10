@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base64"
+	"os"
 	"strings"
 	"testing"
 )
@@ -173,5 +174,25 @@ func TestGenkeysNeedsNoEnvironment(t *testing.T) {
 	var stdout, stderr strings.Builder
 	if got := run([]string{"genkeys"}, &stdout, &stderr); got != 0 {
 		t.Errorf("genkeys exit = %d with an empty environment, want 0", got)
+	}
+}
+
+// §5.2: nag.env.example is comments only and declares no variables. A
+// template carrying NAG_TOKEN= would leave two of every key after the
+// genkeys append, and the one hand edit two candidate lines.
+func TestEnvExampleDeclaresNothing(t *testing.T) {
+	raw, err := os.ReadFile("../../nag.env.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, line := range strings.Split(strings.TrimRight(string(raw), "\n"), "\n") {
+		if !strings.HasPrefix(line, "#") {
+			t.Errorf("line %d is not a comment: %q", i+1, line)
+		}
+	}
+	for _, name := range []string{"NAG_TOKEN", "NAG_VAPID_PUBLIC", "NAG_VAPID_PRIVATE", "NAG_VAPID_SUBJECT", "NAG_DB", "NAG_CONFIG", "NAG_ADDR"} {
+		if !strings.Contains(string(raw), name) {
+			t.Errorf("%s is not documented", name)
+		}
 	}
 }

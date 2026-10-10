@@ -90,8 +90,8 @@ claim going out as `mailto:mailto:…`.
 | [x] | 45 | SIGHUP reload and the two hashes | `351f47e` |
 | [x] | 46 | Security headers and Content-Type rule | `5c99e8d` |
 | [x] | 47 | Graceful shutdown and `nag healthcheck` | `4a528bd` |
-| [x] | 48 | Dockerfile, .dockerignore, compose | |
-| [ ] | 49 | `nag.env.example` and README | |
+| [x] | 48 | Dockerfile, .dockerignore, compose | `f0f694c` |
+| [x] | 49 | `nag.env.example` and README | |
 | [ ] | 50 | **M4 checkpoint / final acceptance** (no commit) | |
 
 ## Commits outside the plan
