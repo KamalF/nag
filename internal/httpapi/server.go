@@ -121,7 +121,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("/api/", s.handleAPINotFound)
 	mux.Handle("/api/", s.requireAuth(api))
 
-	return s.logRequests(securityHeaders(sameOriginOnly(s.caching(capBody(requireJSONBody(mux))))))
+	return s.logRequests(securityHeaders(s.caching(sameOriginOnly(capBody(requireJSONBody(mux))))))
 }
 
 // handleHealthz answers 200 only after the database answered SELECT 1 —

@@ -246,7 +246,7 @@ func TestDeleteRespectsAnExpiredCallerBudget(t *testing.T) {
 // read off a real request to know what a push service sees.
 func TestVAPIDSubjectClaimIsOneMailto(t *testing.T) {
 	var auth string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth = r.Header.Get("Authorization")
 		w.WriteHeader(http.StatusCreated)
 	}))
@@ -282,7 +282,16 @@ func TestVAPIDSubjectClaimIsOneMailto(t *testing.T) {
 	} {
 		t.Run(subject, func(t *testing.T) {
 			p := NewPushSender(st, slog.New(slog.NewTextHandler(io.Discard, nil)), public, private, subject)
-			p.client = srv.Client() // pushClient refuses loopback
+			// the real send, through the test server's own client, since
+			// pushClient refuses loopback — after checking SendTo handed it
+			// pushClient, which webpush-go would otherwise replace
+			p.sendFn = func(ctx context.Context, b []byte, s *webpush.Subscription, o *webpush.Options) (*http.Response, error) {
+				if o.HTTPClient != pushClient {
+					t.Error("SendTo does not send through pushClient")
+				}
+				o.HTTPClient = srv.Client()
+				return webpush.SendNotificationWithContext(ctx, b, s, o)
+			}
 			if res := p.SendTo(t.Context(), 5*time.Second, []byte(`{"n":1,"texts":["x"]}`), sub); res.Err != "" {
 				t.Fatalf("send failed: %+v", res)
 			}
@@ -308,7 +317,7 @@ func TestVAPIDSubjectClaimIsOneMailto(t *testing.T) {
 	}
 }
 
-// A push endpoint can only reach a public address (§7.5): everything a
+// A push endpoint can only reach a public address (§7.1): everything a
 // token holder could aim the server at inside its own network is refused
 // at the dial, after DNS.
 func TestRefuseNonPublic(t *testing.T) {
@@ -347,5 +356,8 @@ func TestPushClientStaysPublic(t *testing.T) {
 	}
 	if pushClient.CheckRedirect(nil, nil) != http.ErrUseLastResponse {
 		t.Error("the push client follows redirects")
+	}
+	if pushClient.Transport.(*http.Transport).Proxy != nil {
+		t.Error("the push client uses a proxy, whose address the dial guard would check instead")
 	}
 }

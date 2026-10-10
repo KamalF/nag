@@ -115,9 +115,10 @@ refusal, and that shoutrrr v0.21.2 panics on a generic URL whose query does
 not parse. Both are fixed.
 
 **Open questions for the owner** (spec decisions, not implemented):
-None. The three questions raised by the review were decided on 2026-10-10:
-§7.4's mask, §10.2's same-origin rule, and §7.2's trust model with a
-container memory ceiling.
+None. The questions raised by the reviews were decided on 2026-10-10:
+§7.4's mask (the scheme only, after review found pushbullet's dotted host
+token), §10.2's same-origin rule, §7.2's trust model with a container
+memory ceiling, and §7.1's public-address-only push client.
 
 ## Commits outside the plan
 
@@ -161,7 +162,8 @@ one-step-one-commit index.
 | `2b7ace3` | second post-M4 review: serve — force-close after the shutdown grace |
 | `3cbf64b` | second post-M4 review: web — editor saves, picker Enter, zone focus; `/simplify` |
 | `f069b6d` | this file: the second post-M4 review |
-| `d478630` | §7.4 mask: no path, host only when dotted — gotify/ifttt/wecom secrets no longer printed (owner decision) |
+| `d478630` | §7.4 mask: no path, host only when dotted — gotify/ifttt/wecom secrets no longer printed (owner decision; superseded below) |
 | `cc146d4` | §10.2 same-origin rule via `http.CrossOriginProtection` — closes the sibling-subdomain CSRF case (owner decision) |
 | `4ddab42` | §7.2 channel endpoints trusted; `mem_limit: 256m` bounds a runaway reply (owner decision) |
-| (this commit) | §7.1 push sends reach public addresses only, no redirects — closes the subscribe SSRF follow-up (owner decision) |
+| `5a346fe` | §7.1 push sends reach public addresses only, no redirects — closes the subscribe SSRF follow-up (owner decision) |
+| (this commit) | `/review-loop` over the four decisions (4 rounds + simplify, converged) — §7.4 mask is the scheme only (pushbullet's `o.…` host token has a dot; owner decision); push client cloned from `DefaultTransport`, its wiring and no-proxy rule tested; cross-origin 403 carries `no-store`; SPEC §7.2/§7.4/§10.2 wording |

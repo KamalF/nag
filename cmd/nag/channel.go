@@ -259,26 +259,19 @@ func redactURL(message, rawURL string) string {
 	return message
 }
 
-// maskChannelURL is §7.4's pinned mask: the scheme, and the host when it
-// names a server, followed by a literal "…" that stands for everything
-// else — one shape whether it dropped a password, four path segments, or
-// nothing. Services disagree about where the secret goes: the userinfo
-// and the query (ntfy, telegram), the last path segment (gotify's token,
-// a webhook's, even a topic on public ntfy.sh), or the host itself
-// (ifttt's and wecom's keys). So the path is never shown, and a host is
-// shown only when it holds a dot: a server name or an IPv4 address, where
-// a key never does.
+// maskChannelURL is §7.4's pinned mask: the scheme and a literal "…" that
+// stands for everything else. Services disagree about where the secret
+// goes — the userinfo and the query (ntfy, telegram), the last path segment
+// (gotify's token, a webhook's, a topic on public ntfy.sh), the host itself
+// (ifttt's and wecom's keys, pushbullet's dotted o.… token) — so no part
+// past the scheme is safe to print, and no rule short of a per-service
+// table could pick one out. The channel's name says which channel it is.
 //
-//	ntfy://user:tok_abc123@ntfy.example.com/alerts → ntfy://ntfy.example.com/…
-//	gotify://gotify.example.com/AbCdToken          → gotify://gotify.example.com/…
-//	ifttt://WebhookKey/?events=x                   → ifttt://…
+//	ntfy://user:tok_abc123@ntfy.example.com/alerts → ntfy://…
 func maskChannelURL(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme == "" {
 		return "(unparseable URL)"
-	}
-	if strings.Contains(u.Hostname(), ".") {
-		return u.Scheme + "://" + u.Host + "/…"
 	}
 	return u.Scheme + "://…"
 }

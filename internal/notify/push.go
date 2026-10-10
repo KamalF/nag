@@ -29,8 +29,6 @@ type PushSender struct {
 	// sendFn is webpush.SendNotificationWithContext, injectable so tests
 	// can play every rung of the ladder without a push service.
 	sendFn func(ctx context.Context, payload []byte, sub *webpush.Subscription, opts *webpush.Options) (*http.Response, error)
-	// client is pushClient; a test sending to a loopback server swaps it
-	client webpush.HTTPClient
 }
 
 func NewPushSender(st *store.Store, log *slog.Logger, vapidPublic, vapidPrivate, subject string) *PushSender {
@@ -41,7 +39,6 @@ func NewPushSender(st *store.Store, log *slog.Logger, vapidPublic, vapidPrivate,
 		vapidPrivate: vapidPrivate,
 		subject:      librarySubscriber(subject),
 		sendFn:       webpush.SendNotificationWithContext,
-		client:       pushClient,
 	}
 }
 
@@ -63,22 +60,17 @@ func librarySubscriber(subject string) string {
 	return subject
 }
 
-// pushClient is the HTTP client every push send goes through. An endpoint
-// is whatever URL a subscribe call handed over (§7.5), so without a guard
-// it would make the server POST wherever a token holder pointed it — a
-// private address on the VPS's network, or through a redirect, a metadata
-// service — and the push test's per-endpoint status would say what
-// answered. So the dial refuses any address that is not public, checked
-// after DNS so a public name resolving to 10.x is caught too, and a
-// redirect is never followed: a push service answers, it does not redirect,
-// and a 3xx lands on the ladder as http 3xx. No proxy either, since a
-// proxy would make the dialled address the proxy's.
+// pushClient is the client every push send goes through (§7.1): it dials
+// only public addresses, checked after DNS; it never follows a redirect, so
+// a 3xx lands on the ladder as http 3xx; and it uses no proxy, which would
+// make the dialled address the proxy's.
 var pushClient = &http.Client{
-	Transport: &http.Transport{
-		DialContext:         (&net.Dialer{Control: refuseNonPublic}).DialContext,
-		ForceAttemptHTTP2:   true,
-		TLSHandshakeTimeout: 10 * time.Second,
-	},
+	Transport: func() *http.Transport {
+		t := http.DefaultTransport.(*http.Transport).Clone()
+		t.Proxy = nil
+		t.DialContext = (&net.Dialer{Control: refuseNonPublic}).DialContext
+		return t
+	}(),
 	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 }
 
@@ -145,8 +137,8 @@ func (p *PushSender) SendTo(ctx context.Context, perSend time.Duration, payload 
 		VAPIDPublicKey:  p.vapidPublic,
 		VAPIDPrivateKey: p.vapidPrivate,
 		Urgency:         webpush.UrgencyHigh,
-		Topic:           "nag", // constant: at most one push ever pending per device (§7.1)
-		HTTPClient:      p.client,
+		Topic:           "nag",      // constant: at most one push ever pending per device (§7.1)
+		HTTPClient:      pushClient, // without it, webpush-go uses a bare http.Client
 	})
 	endpoint := TruncateEndpoint(sub.Endpoint)
 	if err != nil {

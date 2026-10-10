@@ -135,19 +135,13 @@ func TestURLInTheNameSlotIsMasked(t *testing.T) {
 	}
 }
 
-// §7.4's mask, pinned: the scheme, the host only when it holds a dot, and
-// a literal ellipsis for everything else.
+// §7.4's mask, pinned: the scheme, then a literal ellipsis for everything
+// else — including a host, which is pushbullet's and ifttt's key.
 func TestMaskChannelURL(t *testing.T) {
 	for in, want := range map[string]string{
-		ntfyURL: "ntfy://ntfy.example.com/…",
-		"telegram://123:token@telegram?chats=@me":        "telegram://…",
-		"ntfy://ntfy.example.com/a/b/c/topic?priority=5": "ntfy://ntfy.example.com/…",
-		"generic://hook.example.com/":                    "generic://hook.example.com/…",
-		"smtp://u:p@mail.example.com:587/?to=me@x.y":     "smtp://mail.example.com:587/…",
-		"gotify://gotify.example.com/AbCdToken":          "gotify://gotify.example.com/…",
-		"ifttt://WebhookKey/?events=x":                   "ifttt://…",
-		"wecom://0123abcd-key":                           "wecom://…",
-		"generic://192.168.1.5:8080/hook/s3cr3t":         "generic://192.168.1.5:8080/…",
+		ntfyURL:                                 "ntfy://…",   // secret in the userinfo
+		"gotify://gotify.example.com/AbCdToken": "gotify://…", // in the path
+		"pushbullet://o.AbCdEfGhIjKlMnOpQrStUvWxYz012345/device": "pushbullet://…", // in the host, dot and all
 	} {
 		if got := maskChannelURL(in); got != want {
 			t.Errorf("mask(%q) = %q, want %q", in, got, want)
@@ -166,7 +160,7 @@ func TestChannelListMasksAndShowsState(t *testing.T) {
 			t.Errorf("a credential was printed: %q", printed)
 		}
 	}
-	if !strings.Contains(out, "ntfy://ntfy.example.com/…") || !strings.Contains(out, "disabled") {
+	if !strings.Contains(out, "ntfy://…") || !strings.Contains(out, "disabled") {
 		t.Errorf("list = %q", out)
 	}
 	cli.run("enable", "ntfy")
