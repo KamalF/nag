@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net/http"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -46,13 +47,8 @@ func TestServeUntilShutdownOrder(t *testing.T) {
 	}
 
 	want := []string{"server shutdown", "sweep returned", "db closed"}
-	if len(events) != len(want) {
+	if !slices.Equal(events, want) {
 		t.Fatalf("events = %v, want %v", events, want)
-	}
-	for i := range want {
-		if events[i] != want[i] {
-			t.Fatalf("events = %v, want %v", events, want)
-		}
 	}
 }
 

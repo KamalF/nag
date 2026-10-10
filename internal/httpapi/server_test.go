@@ -42,11 +42,10 @@ func testServerWithDB(t *testing.T, logs io.Writer) (*Server, string) {
 		"sw.js":                &fstest.MapFile{Data: []byte("'use strict';")},
 	}
 	s := New(Options{
-		Store:       st,
-		Config:      config.NewLive("", testConfig(), testVAPIDPublic),
-		Web:         web,
-		Token:       testToken,
-		VAPIDPublic: testVAPIDPublic,
+		Store:  st,
+		Config: config.NewLive("", testConfig(), testVAPIDPublic),
+		Web:    web,
+		Token:  testToken,
 		// serve always wires a sender, so a nil one is a test-only shape;
 		// the default keeps POST /api/push/test from nil-panicking in a test
 		// that did not think about push at all

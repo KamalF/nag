@@ -54,9 +54,8 @@ type Server struct {
 	etags map[string]string // path → content hash of each embedded asset (§10.2)
 	log   *slog.Logger
 
-	token       string
-	cookieKey   []byte
-	vapidPublic string
+	token     string
+	cookieKey []byte
 
 	push       pushSender
 	pushBudget time.Duration
@@ -67,29 +66,27 @@ type Server struct {
 }
 
 type Options struct {
-	Store       *store.Store
-	Config      *config.Live
-	Web         fs.FS
-	Token       string
-	VAPIDPublic string
-	Push        pushSender
-	Log         *slog.Logger
+	Store  *store.Store
+	Config *config.Live
+	Web    fs.FS
+	Token  string
+	Push   pushSender
+	Log    *slog.Logger
 }
 
 func New(o Options) *Server {
 	return &Server{
-		store:       o.Store,
-		live:        o.Config,
-		web:         o.Web,
-		etags:       assetETags(o.Web),
-		log:         o.Log,
-		token:       o.Token,
-		cookieKey:   cookieKey(o.Token),
-		vapidPublic: o.VAPIDPublic,
-		push:        o.Push,
-		pushBudget:  pushTestBudget,
-		loginSlot:   make(chan struct{}, 1),
-		loginSleep:  250 * time.Millisecond,
+		store:      o.Store,
+		live:       o.Config,
+		web:        o.Web,
+		etags:      assetETags(o.Web),
+		log:        o.Log,
+		token:      o.Token,
+		cookieKey:  cookieKey(o.Token),
+		push:       o.Push,
+		pushBudget: pushTestBudget,
+		loginSlot:  make(chan struct{}, 1),
+		loginSleep: 250 * time.Millisecond,
 	}
 }
 

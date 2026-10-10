@@ -47,13 +47,12 @@ func runServe(stderr io.Writer) int {
 	// (§7.5), so there is no second copy of the §7.1 ladder to drift
 	sender := notify.NewPushSender(st, logger, env.vapidPublic, env.vapidPrivate, env.vapidSubject)
 	api := httpapi.New(httpapi.Options{
-		Store:       st,
-		Config:      live,
-		Web:         web.Files,
-		Token:       env.token,
-		VAPIDPublic: env.vapidPublic,
-		Push:        sender,
-		Log:         logger,
+		Store:  st,
+		Config: live,
+		Web:    web.Files,
+		Token:  env.token,
+		Push:   sender,
+		Log:    logger,
 	})
 
 	// §10.4 boot lines — the answer to "what is this instance actually
@@ -129,7 +128,10 @@ func serveUntil(stop context.Context, server *http.Server, sweep func(context.Co
 		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
 		if err := server.Shutdown(ctx); err != nil {
-			serveErr = fmt.Errorf("shutdown: %w", err)
+			// a handler outlived the grace — POST /api/push/test may run 12 s
+			// (§7.5). Closing the connections ends its request context, so its
+			// sends stop; this is an ordinary stop, not a failure to report.
+			server.Close()
 		}
 	}
 	cancelSweep()

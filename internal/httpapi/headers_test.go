@@ -1,9 +1,9 @@
 package httpapi
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"testing"
 )
@@ -101,7 +101,7 @@ func TestJSONContentTypeRule(t *testing.T) {
 	}
 
 	for _, req := range []*http.Request{
-		authedRequest(http.MethodPost, "/api/reminders/"+itoa(id)+"/done"),
+		authedRequest(http.MethodPost, fmt.Sprintf("/api/reminders/%d/done", id)),
 		authedRequest(http.MethodPost, "/api/push/test"),
 		httptest.NewRequest(http.MethodPost, "/logout", strings.NewReader("x=1")),
 	} {
@@ -112,5 +112,3 @@ func TestJSONContentTypeRule(t *testing.T) {
 		}
 	}
 }
-
-func itoa(n int64) string { return strconv.FormatInt(n, 10) }

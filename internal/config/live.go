@@ -68,18 +68,16 @@ func (l *Live) Reload(log *slog.Logger) {
 		return
 	}
 	old := l.current.Load()
-	version := old.Version
-	next := l.snapshot(cfg, version)
+	next := l.snapshot(cfg, old.Version)
 	if next.clientHash != old.clientHash {
-		version++
-		next.Version = version
+		next.Version++
 	}
 	l.current.Store(next)
 	if next.fullHash == old.fullHash {
 		log.Info("config unchanged", "path", l.path)
 		return
 	}
-	log.Info("config reloaded", "path", l.path, "presets", len(cfg.Presets), "config_version", version)
+	log.Info("config reloaded", "path", l.path, "presets", len(cfg.Presets), "config_version", next.Version)
 }
 
 func (l *Live) snapshot(cfg *Config, version int) *Snapshot {
