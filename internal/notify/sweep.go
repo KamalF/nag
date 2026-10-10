@@ -145,6 +145,9 @@ func (s *Sweep) tick(ctx context.Context) {
 	// after the push, so a third party's dead socket can cost channel
 	// messages and never delay this app's own notification (§7.3)
 	s.fanOut(ctx, now, eligible)
+	if ctx.Err() != nil {
+		return // shutting down: the purge can wait for the next boot
+	}
 	s.purge(ctx, now)
 }
 
@@ -267,8 +270,11 @@ func (s *Sweep) fanOut(ctx context.Context, markedAt int64, eligible []store.Mar
 	defer cancel()
 	for i, r := range rows {
 		if phase.Err() != nil {
-			s.log.Info("sweep: fan-out deadline reached, rows dropped",
-				"count", len(rows)-i, "ids", markedIDs(rows[i:]))
+			reason := "sweep: fan-out deadline reached, rows dropped"
+			if ctx.Err() != nil {
+				reason = "sweep: fan-out stopped by shutdown, rows dropped"
+			}
+			s.log.Info(reason, "count", len(rows)-i, "ids", markedIDs(rows[i:]))
 			return
 		}
 		s.fanOutRow(phase, markedAt, r, byName)
@@ -298,8 +304,15 @@ func (s *Sweep) fanOutRow(phase context.Context, markedAt int64, r store.MarkedR
 			// attempted for the rest, so nothing is recorded for them
 			continue
 		}
+		verdict := s.channels(phase, c.URL, message)
+		if verdict == NotAttempted {
+			// an earlier send to this URL is still stuck: nothing was
+			// attempted, so nothing is recorded — but the silence is logged
+			s.log.Info("sweep: channel still busy with an earlier send, skipped", "id", r.ID, "channel", name)
+			continue
+		}
 		attempted++
-		if verdict := s.channels(phase, c.URL, message); verdict != "" {
+		if verdict != "" {
 			failures = append(failures, name+": "+verdict)
 		}
 	}

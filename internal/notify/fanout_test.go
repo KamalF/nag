@@ -291,3 +291,50 @@ func TestFormatDeliveryError(t *testing.T) {
 		}
 	}
 }
+
+// A shutdown mid-tick: fan-out stops at the row boundary and says why, and
+// the purge is skipped rather than failing on the cancelled context.
+func TestShutdownMidFanOut(t *testing.T) {
+	f := newFixture(t)
+	fc := withChannels(t, f, "dead")
+	fc.hang["url://dead"] = true
+	f.createWith("one", 0, "dead")
+	f.createWith("two", 1, "dead")
+
+	ctx, cancel := context.WithCancel(t.Context())
+	f.clock = t0 + 10
+	go func() {
+		for fc.count() == 0 {
+			time.Sleep(time.Millisecond)
+		}
+		cancel()
+	}()
+	f.sweep.tick(ctx)
+
+	logs := f.logs.String()
+	if !strings.Contains(logs, "fan-out stopped by shutdown") {
+		t.Errorf("no shutdown reason: %s", logs)
+	}
+	if strings.Contains(logs, "sweep: purge") {
+		t.Errorf("the purge ran on a cancelled context: %s", logs)
+	}
+}
+
+// A channel still busy with an earlier send is not attempted: nothing is
+// recorded for it (§4.1 — the column describes attempts), and the skip is
+// logged.
+func TestFanOutSkipsABusyChannel(t *testing.T) {
+	f := newFixture(t)
+	fc := withChannels(t, f, "mail", "ntfy")
+	fc.verdicts["url://mail"] = NotAttempted
+	r := f.createWith("x", 0, "mail", "ntfy")
+
+	f.tickAt(10)
+
+	if got := f.deliveryError(r.ID); got != nil {
+		t.Errorf("delivery_error = %q, want nothing recorded", *got)
+	}
+	if !strings.Contains(f.logs.String(), "still busy") {
+		t.Errorf("busy skip not logged: %s", f.logs.String())
+	}
+}

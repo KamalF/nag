@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/nicholas-fedor/shoutrrr/pkg/router"
@@ -45,17 +46,42 @@ func ValidateChannelURL(rawURL string) error {
 // caller selects on that and on a context with the 10-second timeout,
 // derived from ctx so a shorter caller deadline wins. A context that
 // expires first abandons the send — recorded as timeout, the word for
-// "attempted, did not complete", whether a deadline or a shutdown ended it —
-// and the goroutine finishes on its own client's timeout and is discarded.
-// Where a service offers SendContext it gets the context, and every
-// service that takes one gets an http.Client with the same timeout; but the
-// bound never depends on either.
+// "attempted, did not complete", whether a deadline or a shutdown ended it.
+//
+// §7.2 expects the abandoned goroutine to end on its own client's timeout.
+// Most v0.18.0 services do bound themselves, but not all: smtp puts no
+// deadline on the conversation after its dial, and pushbullet and generic
+// fall back to a bare http.Client. So the leak is bounded here, whatever
+// the service does: while an earlier send to the same URL is still running
+// — and has run for less than busyFor — no new one starts, and the verdict
+// is NotAttempted. Nothing was attempted, so nothing is recorded for it
+// (§4.1); the sweep logs the skip. A host that hangs forever then costs
+// one goroutine per busyFor, not one per reminder, and the channel is
+// tried again after that rather than muted for good.
+//
+// A service offering SendContext gets the context too; none does in
+// v0.18.0, so that is a hook for when the library grows it.
 func SendChannel(ctx context.Context, rawURL, message string) string {
+	slot := &sendSlot{started: time.Now()}
+	if prev, busy := inFlight.LoadOrStore(rawURL, slot); busy {
+		if time.Since(prev.(*sendSlot).started) < busyFor {
+			return NotAttempted
+		}
+		// stuck past any timeout a service could have: take the slot over
+		inFlight.Store(rawURL, slot)
+	}
 	sendCtx, cancel := context.WithTimeout(ctx, ChannelSendTimeout)
 	defer cancel()
 
 	result := make(chan error, 1)
-	go func() { result <- sendOnce(sendCtx, rawURL, message) }()
+	go func() {
+		err := sendOnce(sendCtx, rawURL, message)
+		// released before the verdict is handed over, so a caller that
+		// sends again at once never finds its own finished send still busy;
+		// and only this send's own slot, never one that took it over
+		inFlight.CompareAndDelete(rawURL, slot)
+		result <- err
+	}()
 	select {
 	case err := <-result:
 		if err == nil {
@@ -67,12 +93,46 @@ func SendChannel(ctx context.Context, rawURL, message string) string {
 	}
 }
 
+// NotAttempted is SendChannel's verdict for a send it did not start because
+// an earlier one to the same URL is still running. It is not a §4.1
+// classification and never reaches delivery_error.
+const NotAttempted = "not attempted"
+
+// busyFor is how long a running send keeps new ones to its URL from
+// starting: past every client timeout a v0.18.0 service sets (30 s is the
+// longest), so only a send that will never end on its own is ever taken
+// over.
+var busyFor = 3 * ChannelSendTimeout
+
+type sendSlot struct{ started time.Time }
+
+// inFlight maps a channel URL to the send currently running for it,
+// abandoned or not.
+var inFlight sync.Map
+
+// timedClientServices get an injected http.Client carrying the send
+// timeout, so an abandoned send ends on its own and frees its inFlight slot
+// instead of muting the channel until the host closes the socket. Only
+// generic: it falls back to a bare &http.Client{} with
+// context.Background(), and its SetHTTPClient only swaps the field. The
+// router injects after a service has initialised, which elsewhere replaces
+// a client the service configured itself — ntfy and gotify lose their TLS
+// options (disabletlsverification, insecureskipverify), and pushbullet
+// loses the Access-Token header it set on its own client — so injecting
+// anywhere else breaks the sends it was meant to bound. Re-check when the
+// pin moves.
+var timedClientServices = map[string]bool{"generic": true}
+
+// abandonedSendTimeout is the injected client's timeout; a variable so a
+// test can shorten it.
+var abandonedSendTimeout = ChannelSendTimeout
+
 func sendOnce(ctx context.Context, rawURL, message string) error {
-	r := newRouter(types.SenderOptions{
-		HTTPClient: &http.Client{Timeout: ChannelSendTimeout},
-		Timeout:    ChannelSendTimeout,
-	})
-	service, err := r.Locate(rawURL)
+	var opts types.SenderOptions
+	if scheme, _, err := newRouter(opts).ExtractServiceName(rawURL); err == nil && timedClientServices[scheme] {
+		opts.HTTPClient = &http.Client{Timeout: abandonedSendTimeout}
+	}
+	service, err := newRouter(opts).Locate(rawURL)
 	if err != nil {
 		return err
 	}
@@ -85,15 +145,29 @@ func sendOnce(ctx context.Context, rawURL, message string) error {
 // classifyChannelError reads the error's type and never its text (§4.1). A
 // status appears only when the library surfaces it as a value — a code that
 // exists only inside a sentence is not one, and anything that cannot be
-// typed is "send failed": a floor, not a fallback.
+// typed is "send failed": a floor, not a fallback. Only a failure status
+// counts: jsonclient also returns its Error for a 2xx whose body is not
+// JSON (an auth proxy's login page), and "http 200" would read as a
+// contradiction in a column of failures.
 func classifyChannelError(err error) string {
-	var status jsonclient.Error
-	if errors.As(err, &status) && status.StatusCode > 0 {
-		return fmt.Sprintf("http %d", status.StatusCode)
-	}
-	var statusPtr *jsonclient.Error
-	if errors.As(err, &statusPtr) && statusPtr.StatusCode > 0 {
-		return fmt.Sprintf("http %d", statusPtr.StatusCode)
+	if code := failureStatus(err); code != 0 {
+		return fmt.Sprintf("http %d", code)
 	}
 	return classifySendError(err)
+}
+
+func failureStatus(err error) int {
+	var status jsonclient.Error
+	var statusPtr *jsonclient.Error
+	code := 0
+	switch {
+	case errors.As(err, &status):
+		code = status.StatusCode
+	case errors.As(err, &statusPtr):
+		code = statusPtr.StatusCode
+	}
+	if code < 400 {
+		return 0
+	}
+	return code
 }
