@@ -346,7 +346,17 @@ week_start = "monday"
 		{
 			"unknown key in a preset",
 			doc("", "", validPresets+"quik = true\n"),
-			[]string{"unknown key", "quik"},
+			[]string{"unknown key", "quik", "(line "},
+		},
+		{
+			"syntax error is located",
+			doc("", "", validPresets) + "\n[[preset]]\nat = 0900\n",
+			[]string{"line ", "column "},
+		},
+		{
+			"type error is located",
+			doc("", "", validPresets) + "\n[[preset]]\ndays = \"1\"\n",
+			[]string{"line ", "days"},
 		},
 		{
 			"unknown section",

@@ -51,7 +51,7 @@ func runServe(stderr io.Writer) int {
 	})
 
 	// §10.4 boot lines — the answer to "what is this instance actually
-	// running". The subscription count joins with the push commits.
+	// running".
 	logger.Info("build version", "version", version)
 	logger.Info("listening", "addr", env.addr)
 	logger.Info("database", "path", env.db)

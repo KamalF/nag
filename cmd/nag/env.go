@@ -94,13 +94,37 @@ func checkVAPIDKey(name, value string, wantBytes int) error {
 	}
 	decoded, err := base64.RawURLEncoding.DecodeString(value)
 	if err != nil {
-		return fmt.Errorf("%s is not unpadded base64url (expected %d decoded bytes): found %q",
-			name, wantBytes, value)
+		return fmt.Errorf("%s is not unpadded base64url (expected %d decoded bytes): found %s",
+			name, wantBytes, describeNonBase64URL(value))
 	}
 	if len(decoded) != wantBytes {
 		return fmt.Errorf("%s decodes to %d bytes, expected exactly %d", name, len(decoded), wantBytes)
 	}
 	return nil
+}
+
+// describeNonBase64URL says what is wrong with a key without quoting it:
+// a mangled NAG_VAPID_PRIVATE is still the private key, typically in the
+// standard alphabet, and the FATAL line lands in `docker logs`.
+func describeNonBase64URL(value string) string {
+	switch {
+	case strings.ContainsAny(value, "+/"):
+		return "standard base64 characters (+ or /)"
+	case strings.Contains(value, "="):
+		return "padding (=)"
+	case strings.ContainsAny(value, " \t"):
+		return "whitespace"
+	case strings.ContainsFunc(value, notBase64URL):
+		return "characters outside the base64url alphabet"
+	default:
+		// every character is valid and the string still did not decode:
+		// its length is one past a multiple of four, which no encoding has
+		return fmt.Sprintf("%d characters, a length no base64url string has — likely truncated", len(value))
+	}
+}
+
+func notBase64URL(r rune) bool {
+	return !(r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' || r == '_')
 }
 
 // checkSubject wants an absolute mailto: or https: URL (RFC 8292) and

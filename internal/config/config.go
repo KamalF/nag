@@ -102,6 +102,18 @@ func parse(raw []byte) (*Config, error) {
 		if errors.As(err, &strict) {
 			return nil, unknownKeysError(strict)
 		}
+		// a syntax or type error: §5.5 wants every message located, and a
+		// bare "integers cannot have leading zeroes" names no line and no
+		// preset in a file with several of them
+		var decodeErr *toml.DecodeError
+		if errors.As(err, &decodeErr) {
+			row, col := decodeErr.Position()
+			where := fmt.Sprintf("line %d, column %d", row, col)
+			if key := decodeErr.Key(); len(key) > 0 {
+				where += " (" + strings.Join(key, ".") + ")"
+			}
+			return nil, fmt.Errorf("%s: %w", where, err)
+		}
 		return nil, err
 	}
 	if err := validate(&cfg); err != nil {
@@ -116,7 +128,8 @@ func parse(raw []byte) (*Config, error) {
 func unknownKeysError(strict *toml.StrictMissingError) error {
 	names := make([]string, 0, len(strict.Errors))
 	for _, e := range strict.Errors {
-		names = append(names, strings.Join(e.Key(), "."))
+		row, _ := e.Position()
+		names = append(names, fmt.Sprintf("%s (line %d)", strings.Join(e.Key(), "."), row))
 	}
 	return fmt.Errorf("unknown key or section: %s", strings.Join(names, ", "))
 }

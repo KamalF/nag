@@ -86,6 +86,13 @@ func TestLoadServeEnvRefusals(t *testing.T) {
 			[]string{"NAG_VAPID_PUBLIC", "63", "65"},
 		},
 		{
+			"public key truncated to an undecodable length",
+			func(v map[string]string) {
+				v["NAG_VAPID_PUBLIC"] = base64.RawURLEncoding.EncodeToString(make([]byte, 65))[:85]
+			},
+			[]string{"NAG_VAPID_PUBLIC", "85 characters", "truncated"},
+		},
+		{
 			"private key of the wrong length",
 			func(v map[string]string) {
 				v["NAG_VAPID_PRIVATE"] = base64.RawURLEncoding.EncodeToString(make([]byte, 31))
@@ -133,6 +140,29 @@ func TestLoadServeEnvRefusals(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A mangled private key is still the private key, and the FATAL line lands
+// in `docker logs`: the error names what is wrong, never the value.
+func TestLoadServeEnvNeverEchoesThePrivateKey(t *testing.T) {
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = 0xfb // encodes to a run of + and / in the standard alphabet
+	}
+	mangled := base64.StdEncoding.EncodeToString(key)
+	vars := validServeVars()
+	vars["NAG_VAPID_PRIVATE"] = mangled
+	setVars(t, vars)
+	_, err := loadServeEnv()
+	if err == nil {
+		t.Fatal("loadServeEnv accepted a standard-base64 private key")
+	}
+	if strings.Contains(err.Error(), mangled[:16]) {
+		t.Errorf("error quotes the key: %v", err)
+	}
+	if !strings.Contains(err.Error(), "standard base64") {
+		t.Errorf("error %q does not say what was found", err)
 	}
 }
 
