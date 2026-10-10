@@ -95,6 +95,7 @@ func TestChannelAddRefusalHidesTheURL(t *testing.T) {
 		"telegram://tok_SECRET@telegram",
 		`ntfy://host/topic?tokn=tk%5Ctok_SECRET`,
 		`ntfy://host/topic?tokn=tk%22tok_SECRET`,
+		"wecom://0123abcd-tok_SECRET;9", // wecom's key is the host
 	} {
 		cli := newChannelCLI(t)
 		code, _, stderr := cli.run("add", "x", raw)
@@ -106,6 +107,30 @@ func TestChannelAddRefusalHidesTheURL(t *testing.T) {
 		}
 		if !strings.Contains(stderr, "shoutrrr cannot use this URL") {
 			t.Errorf("refusal does not name the parse error: %q", stderr)
+		}
+	}
+	// a fixed host that is the service's own name is no secret, and
+	// eliding it would erase the service from the message
+	cli := newChannelCLI(t)
+	_, _, stderr := cli.run("add", "x", "telegram://tok_SECRET@telegram")
+	if !strings.Contains(stderr, "telegram: invalid telegram token") {
+		t.Errorf("refusal lost the service name: %q", stderr)
+	}
+}
+
+// A URL typed where the name goes is masked, not echoed: swapped arguments
+// on add, or the URL given to test, rm, enable or disable.
+func TestURLInTheNameSlotIsMasked(t *testing.T) {
+	cli := newChannelCLI(t)
+	for _, args := range [][]string{
+		{"add", ntfyURL, "phone"},
+		{"test", ntfyURL},
+		{"rm", ntfyURL},
+		{"enable", ntfyURL},
+	} {
+		code, _, stderr := cli.run(args...)
+		if code != 1 || strings.Contains(stderr, "tok_abc123") {
+			t.Errorf("channel %v = %d, stderr %q", args, code, stderr)
 		}
 	}
 }

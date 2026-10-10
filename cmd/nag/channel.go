@@ -91,7 +91,7 @@ func describeChannelError(err error) error {
 // you cared about.
 func channelAdd(ctx context.Context, st *store.Store, name, rawURL string, stdout io.Writer) error {
 	if !slugPattern.MatchString(name) {
-		return fmt.Errorf("channel name %q must match %s", name, slugPattern)
+		return fmt.Errorf("channel name %s must match %s", shownName(name), slugPattern)
 	}
 	if err := notify.ValidateChannelURL(rawURL); err != nil {
 		return fmt.Errorf("shoutrrr cannot use this URL: %s", redactURL(err.Error(), rawURL))
@@ -117,11 +117,7 @@ func channelList(ctx context.Context, st *store.Store, stdout io.Writer) error {
 		return nil
 	}
 	for _, c := range rows {
-		state := "enabled"
-		if !c.Enabled {
-			state = "disabled"
-		}
-		fmt.Fprintf(stdout, "%-32s %-8s %s\n", c.Name, state, maskChannelURL(c.URL))
+		fmt.Fprintf(stdout, "%-32s %-8s %s\n", c.Name, stateWord(c.Enabled), maskChannelURL(c.URL))
 	}
 	return nil
 }
@@ -137,7 +133,7 @@ func channelRemove(ctx context.Context, st *store.Store, name string, stdout io.
 	}
 	if err := st.RemoveChannel(ctx, name); err != nil {
 		if errors.Is(err, store.ErrNoSuchChannel) {
-			return fmt.Errorf("no channel named %q", name)
+			return noSuchChannel(name)
 		}
 		return err
 	}
@@ -152,16 +148,34 @@ func channelRemove(ctx context.Context, st *store.Store, name string, stdout io.
 func channelSetEnabled(ctx context.Context, st *store.Store, name string, enabled bool, stdout io.Writer) error {
 	if err := st.SetChannelEnabled(ctx, name, enabled); err != nil {
 		if errors.Is(err, store.ErrNoSuchChannel) {
-			return fmt.Errorf("no channel named %q", name)
+			return noSuchChannel(name)
 		}
 		return err
 	}
-	state := "enabled"
-	if !enabled {
-		state = "disabled"
-	}
-	fmt.Fprintf(stdout, "%s %s\n", name, state)
+	fmt.Fprintf(stdout, "%s %s\n", name, stateWord(enabled))
 	return nil
+}
+
+func stateWord(enabled bool) string {
+	if enabled {
+		return "enabled"
+	}
+	return "disabled"
+}
+
+func noSuchChannel(name string) error {
+	return fmt.Errorf("no channel named %s", shownName(name))
+}
+
+// shownName quotes a name for an error message — unless it is a URL typed
+// where the name goes (`add` with its arguments swapped, `test` given the
+// URL), which would print the credential back; that is masked like any
+// URL this command shows (§7.4).
+func shownName(name string) string {
+	if strings.Contains(name, "://") {
+		return maskChannelURL(name)
+	}
+	return strconv.Quote(name)
 }
 
 // testMessage is what `nag channel test` sends (§7.4).
@@ -180,7 +194,7 @@ var errTestFailed = errors.New("the test send failed")
 func channelTest(ctx context.Context, st *store.Store, name string, stdout io.Writer) error {
 	c, err := st.ChannelByName(ctx, name)
 	if errors.Is(err, store.ErrNoSuchChannel) {
-		return fmt.Errorf("no channel named %q", name)
+		return noSuchChannel(name)
 	}
 	if err != nil {
 		return err
@@ -206,6 +220,15 @@ func channelTest(ctx context.Context, st *store.Store, name string, stdout io.Wr
 func redactURL(message, rawURL string) string {
 	secrets := []string{rawURL}
 	if u, err := url.Parse(rawURL); err == nil {
+		// some services keep the key in the host (wecom://<key>); others
+		// use their own name as a fixed host (telegram://…@telegram), and
+		// that one is kept so the message still names the service
+		service, _, _ := strings.Cut(u.Scheme, "+")
+		for _, host := range []string{u.Host, u.Hostname()} {
+			if !strings.EqualFold(host, service) {
+				secrets = append(secrets, host)
+			}
+		}
 		if u.User != nil {
 			secrets = append(secrets, u.User.String(), u.User.Username())
 			if p, ok := u.User.Password(); ok {
