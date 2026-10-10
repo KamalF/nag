@@ -259,24 +259,26 @@ func redactURL(message, rawURL string) string {
 	return message
 }
 
-// maskChannelURL is §7.4's pinned mask: scheme, host, and the last path
-// segment, with userinfo and query always elided behind a literal "…" —
-// one shape whether it dropped a password, four path segments, or nothing.
-// A shoutrrr URL keeps its secret in the userinfo and the query, and its
-// path is usually the harmless half, which is why this is not §7.5's
-// last-eight-characters form.
+// maskChannelURL is §7.4's pinned mask: the scheme, and the host when it
+// names a server, followed by a literal "…" that stands for everything
+// else — one shape whether it dropped a password, four path segments, or
+// nothing. Services disagree about where the secret goes: the userinfo
+// and the query (ntfy, telegram), the last path segment (gotify's token,
+// a webhook's, even a topic on public ntfy.sh), or the host itself
+// (ifttt's and wecom's keys). So the path is never shown, and a host is
+// shown only when it holds a dot: a server name or an IPv4 address, where
+// a key never does.
 //
-//	ntfy://user:tok_abc123@ntfy.example.com/alerts → ntfy://ntfy.example.com/…/alerts
-//	telegram://token@telegram?chats=123           → telegram://telegram/…
+//	ntfy://user:tok_abc123@ntfy.example.com/alerts → ntfy://ntfy.example.com/…
+//	gotify://gotify.example.com/AbCdToken          → gotify://gotify.example.com/…
+//	ifttt://WebhookKey/?events=x                   → ifttt://…
 func maskChannelURL(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme == "" {
 		return "(unparseable URL)"
 	}
-	masked := u.Scheme + "://" + u.Host + "/…"
-	path := strings.TrimSuffix(u.Path, "/")
-	if i := strings.LastIndex(path, "/"); i >= 0 && i < len(path)-1 {
-		masked += path[i:]
+	if strings.Contains(u.Hostname(), ".") {
+		return u.Scheme + "://" + u.Host + "/…"
 	}
-	return masked
+	return u.Scheme + "://…"
 }

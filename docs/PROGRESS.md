@@ -115,14 +115,10 @@ refusal, and that shoutrrr v0.21.2 panics on a generic URL whose query does
 not parse. Both are fixed.
 
 **Open questions for the owner** (spec decisions, not implemented):
-1. §7.4's pinned `list` mask prints the whole secret for services that keep
-   it in the last path segment or the host (gotify's token, opsgenie's key,
-   ifttt's webhook key, wecom's key). The same mask is used when a URL is
-   typed where `nag channel` expects a name.
-2. §10.2's bodyless-mutation exemption leans on `SameSite=Lax`, which does
+1. §10.2's bodyless-mutation exemption leans on `SameSite=Lax`, which does
    not stop a page on a sibling subdomain (same site) from auto-submitting
    an empty form to `/done`, `/undone` or `/api/push/test`.
-3. A channel endpoint can stream an unbounded response body into
+2. A channel endpoint can stream an unbounded response body into
    shoutrrr's own `io.ReadAll`; bounding it means wrapping each service's
    transport, which breaks the services that configure their own client.
 
@@ -167,4 +163,5 @@ one-step-one-commit index.
 | `53528b7` | second post-M4 review: cli — no secret echoed by `nag channel` |
 | `2b7ace3` | second post-M4 review: serve — force-close after the shutdown grace |
 | `3cbf64b` | second post-M4 review: web — editor saves, picker Enter, zone focus; `/simplify` |
-| (this commit) | this file: the second post-M4 review |
+| `f069b6d` | this file: the second post-M4 review |
+| (this commit) | §7.4 mask: no path, host only when dotted — gotify/ifttt/wecom secrets no longer printed (owner decision) |
