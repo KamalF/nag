@@ -10,11 +10,7 @@ import (
 // with deliberate deviations from a straight inversion, which is exactly
 // what a hand-copied stylesheet gets wrong.
 func TestCSSTokensMatchTheSpecTable(t *testing.T) {
-	raw, err := Files.ReadFile("app.css")
-	if err != nil {
-		t.Fatal(err)
-	}
-	css := string(raw)
+	css := readFile(t, "app.css")
 	darkAt := strings.Index(css, "@media (prefers-color-scheme: dark)")
 	if darkAt < 0 {
 		t.Fatal("no prefers-color-scheme: dark block")
@@ -60,11 +56,7 @@ func tokenValue(block, name string) string {
 // §9.7: style-src 'self' blocks a style="…" attribute parsed from HTML
 // exactly as it blocks a <style> block, so the markup carries neither.
 func TestIndexHasNoInlineStyle(t *testing.T) {
-	raw, err := Files.ReadFile("index.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	html := string(raw)
+	html := readFile(t, "index.html")
 	if strings.Contains(html, "style=") || strings.Contains(html, "<style") {
 		t.Error("index.html carries an inline style")
 	}

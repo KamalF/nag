@@ -325,6 +325,8 @@ button:not(:disabled):active { transform: scale(.96); }
   .row .when { font-size: 14px; }
   .row .acts { margin-left: auto; gap: 8px; }
   .act { padding: 9px 14px; font-size: 12px; min-height: 40px; }
+  .channels-toggle { min-height: 40px; }
+  .calhead button { width: 40px; height: 40px; }
   .row.late { padding: 13px 12px 13px 14px; }
   .zone { padding-bottom: 20px; }
   .zone h2 { margin: 16px 0 8px; }

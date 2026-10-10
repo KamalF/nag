@@ -122,11 +122,11 @@ async function init() {
     stateETag = res.headers.get('ETag');
     lastState = state;
     syncClock(res, state);
-    const cfgRes = await fetch('/api/config');
+    // past the 401 check, the two reads are independent: one round trip
+    const [cfgRes, chRes] = await Promise.all([fetch('/api/config'), fetch('/api/channels')]);
     if (!cfgRes.ok) throw new Error('config ' + cfgRes.status);
-    config = await cfgRes.json();
-    const chRes = await fetch('/api/channels');
     if (!chRes.ok) throw new Error('channels ' + chRes.status);
+    config = await cfgRes.json();
     channels = await chRes.json();
   } catch {
     // a boot that fails must retry, not brick: there is no list yet to keep
@@ -259,23 +259,21 @@ function createBar({ value = '', placeholder = '', label, onTime, onEnter, pickF
     },
     redrawChips() {
       chips.replaceChildren();
-      for (const p of config.presets) {
+      const chip = (label, onClick) => {
         const b = document.createElement('button');
         b.type = 'button';
         b.className = 'chip';
-        b.textContent = p.label;
-        b.addEventListener('click', () => bar.submit(() => onTime({ preset: p.key })));
+        b.textContent = label;
+        b.addEventListener('click', () => onClick(b));
         chips.append(b);
+      };
+      for (const p of config.presets) {
+        chip(p.label, () => bar.submit(() => onTime({ preset: p.key })));
       }
       // "Pick a time" is not a preset (§5.4): the client renders it after
       // the configured ones, and the picker's Set reminder is its save
-      const pick = document.createElement('button');
-      pick.type = 'button';
-      pick.className = 'chip';
-      pick.textContent = 'Pick a time';
-      pick.addEventListener('click', () =>
+      chip('Pick a time', (pick) =>
         openPicker({ opener: pick, from: pickFrom?.(), onSet: (dueAt) => bar.submit(() => onTime({ due_at: dueAt })) }));
-      chips.append(pick);
       bar.updateEnabled();
     },
   };
@@ -332,8 +330,8 @@ function channelSelector(attached) {
       // deselecting always works; selecting needs an enabled, known channel
       b.disabled = !chip.selected && !chip.selectable;
     };
+    // a chip that cannot be selected is disabled, so a click always toggles
     b.addEventListener('click', () => {
-      if (!chip.selected && !chip.selectable) return;
       chip.selected = !chip.selected;
       paint();
     });
@@ -456,11 +454,22 @@ function closeEditor() {
   row.li.classList.remove('editing');
   row.editing = false;
   if (lastState) renderState(lastState);
-  const edit = row.li.querySelector('.act-edit');
+  const edit = row.li.querySelector('[data-action="Edit"]');
   // saved from the picker: the chip that opened it has just gone with the
   // editor, so the sheet hands focus here when it closes
   if (picker?.saving && bar.el.contains(picker.opener)) picker.returnTo = edit;
   else edit?.focus({ preventScroll: true });
+}
+
+// replaceInState swaps one reminder's object in the last state, in place:
+// the row's content becomes right at once, while which zone it belongs to
+// stays the server's answer, from the refetch that follows every mutation.
+function replaceInState(reminder) {
+  if (!lastState) return;
+  for (const list of [lastState.overdue, lastState.later]) {
+    const i = list.findIndex((r) => r.id === reminder.id);
+    if (i >= 0) list[i] = reminder;
+  }
 }
 
 // saveEdit sends every field the editor shows (§9.2): text and
@@ -476,13 +485,19 @@ async function saveEdit(row, bar, timing) {
   // this save's own editor only: Esc'd and reopened on the same row, the
   // new editor is someone else's typing
   if (editor?.bar !== bar) return true;
+  // the returned object is what makes the row redraw right (§8.2): put it in
+  // the state the next pass draws from, so the row never shows its old text
+  // for a round trip — the refetch still owns the zone split
+  replaceInState(result.data);
   if (bar.text() === text) {
     closeEditor();
   } else {
     // typed into while the save was in flight: the save landed, and what
     // was typed since stays in the open editor, measured against the row
-    // as it now stands — whose time, beside the editor, is repainted
+    // as it now stands — whose time and marker, beside the editor, are
+    // repainted
     row.reminder = result.data;
+    paintMarker(row.marker, result.data);
     row.when.textContent = whenText(result.data.due_at);
   }
   return true;
@@ -554,14 +569,13 @@ function openingState(from) {
   const clamp = (h) => Math.min(Math.max(h, lo), hi);
   if (from !== undefined) {
     const stored = new Date(from * 1000);
-    const date = new Date(stored.getFullYear(), stored.getMonth(), stored.getDate());
+    const date = localMidnight(stored);
     const hour = clamp(stored.getHours());
     if (moment(date, hour, 0) > now()) return { date, hour, minute: 0 };
   }
   const [h, m] = config.picker.default_time.split(':').map(Number);
   const hour = clamp(h);
-  const today = new Date(now() * 1000);
-  const date = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const date = localMidnight(new Date(now() * 1000));
   if (moment(date, hour, m) <= now()) date.setDate(date.getDate() + 1);
   return { date, hour, minute: m };
 }
@@ -592,15 +606,24 @@ function renderSummary() {
   $('relative').textContent = dueAt - now() <= 0 ? PAST_SENTENCE : whenText(dueAt);
 }
 
+// localMidnight is the start of d's day in the browser's timezone.
+function localMidnight(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+// weekStart is week_start as a JS day number: Sunday 0, Monday 1.
+function weekStart() {
+  return config.picker.week_start === 'sunday' ? 0 : 1;
+}
+
 // buildWeekdays labels the columns from week_start, in the device locale.
 function buildWeekdays() {
-  const start = config.picker.week_start === 'sunday' ? 0 : 1;
-  const sunday = new Date(2023, 0, 1); // a Sunday
+  const start = weekStart();
   $('dow').replaceChildren();
   for (let i = 0; i < 7; i++) {
     const span = document.createElement('span');
-    span.textContent = shortWeekdayFormat.format(
-      new Date(sunday.getFullYear(), sunday.getMonth(), sunday.getDate() + ((start + i) % 7)));
+    // 1 January 2023 was a Sunday
+    span.textContent = shortWeekdayFormat.format(new Date(2023, 0, 1 + ((start + i) % 7)));
     $('dow').append(span);
   }
 }
@@ -611,9 +634,8 @@ function buildWeekdays() {
 // the device clock directly. No year stepper and no bound on paging.
 function buildCalendar() {
   const { view } = picker;
-  const start = config.picker.week_start === 'sunday' ? 0 : 1;
-  const nowDate = new Date(now() * 1000);
-  const today = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate());
+  const start = weekStart();
+  const today = localMidnight(new Date(now() * 1000));
   $('month').textContent = monthFormat.format(view);
 
   const grid = $('grid');
@@ -753,8 +775,11 @@ function wirePicker() {
   onWheelScroll($('minutes'), 'minute');
   $('sheet').addEventListener('keydown', (e) => {
     trapFocus(e);
-    // Enter anywhere in the sheet activates Set reminder (§9.4)
-    if (e.key === 'Enter' && !e.isComposing) {
+    // Enter anywhere in the sheet activates Set reminder (§9.4, §9.6) — a
+    // clicked day or wheel value keeps focus, and Enter must still save from
+    // there. The one exception is Cancel, where Enter saving would do the
+    // opposite of the button the user is on.
+    if (e.key === 'Enter' && !e.isComposing && e.target !== $('picker-cancel')) {
       e.preventDefault();
       setPicked();
     }
@@ -1113,15 +1138,23 @@ function armDueTimer(state) {
 function renderState(state) {
   if (state.config_version !== config.config_version) reloadWhenQuiet();
   $('overdue-count').textContent = state.overdue_count;
-  renderLists(state);
   // a zone heading is hidden entirely when its list is empty, and the empty
-  // state replaces both (§9.2)
-  const hasOverdue = state.overdue.length > 0;
-  const hasLater = state.later.length > 0;
+  // state replaces both (§9.2). Shown before the lists are drawn: a row
+  // moving into a zone that was empty gets its focus restored there, and
+  // focus() does nothing inside a hidden section.
+  // A row with its editor open stays in its zone whatever the response says
+  // (§9.2): that zone stays shown even when the server has emptied it, and
+  // the zone the server moved it to counts it only once the editor closes.
+  const editingIn = editor?.row.li.parentElement;
+  const editingId = editor?.row.id;
+  const listed = (list) => list.some((r) => String(r.id) !== editingId);
+  const hasOverdue = listed(state.overdue) || editingIn === $('overdue');
+  const hasLater = listed(state.later) || editingIn === $('later');
   $('overdue-zone').hidden = !hasOverdue;
   $('later-zone').hidden = !hasLater;
   $('divider').hidden = !(hasOverdue && hasLater);
   $('empty').hidden = hasOverdue || hasLater;
+  renderLists(state);
   // driven by the same render pass as the lists, which is what keeps all
   // three outputs correct after a 304 too (§9.3)
   setBadge(state.overdue_count);
@@ -1333,8 +1366,7 @@ function applyPendingFlash() {
   litRow = pendingFlash.id;
   pendingFlash = null;
   paintFlash(row);
-  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  row.scrollIntoView({ block: 'center', behavior: still ? 'auto' : 'smooth' });
+  row.scrollIntoView({ block: 'center', behavior: scrollBehavior() });
   // the highlight is measured from the moment the row is on screen, not from
   // the click that asked for it
   flashTimer = setTimeout(clearFlash, FLASH_MS);
@@ -1540,7 +1572,6 @@ function rowActions(row) {
   // the row text cannot be a <button> — it contains anchors (§9.10) — so
   // pointer users click the text and the keyboard gets a real button
   const edit = actionButton('Edit', false, () => openEditor(row));
-  edit.classList.add('act-edit');
   actions.push(edit);
   if (row.late) {
     for (const p of config.presets) {
@@ -1562,7 +1593,6 @@ function actionButton(label, primary, onClick) {
   b.textContent = label;
   b.dataset.action = label; // what a pass restores focus to (renderLists)
   b.addEventListener('click', async () => {
-    if (b.disabled) return;
     b.disabled = true;
     try {
       await onClick();
@@ -1704,7 +1734,7 @@ function pollFailed() {
   if (pollFailures < OFFLINE_AFTER_FAILURES) return;
   const minutes = Math.floor((performance.now() - lastPollOk) / 60000);
   const ago = minutes < 1 ? 'less than a minute ago'
-    : minutes < 60 ? minutes + (minutes === 1 ? ' minute ago' : ' minutes ago')
+    : minutes < 60 ? count(minutes, 'minute') + ' ago'
     : Math.floor(minutes / 60) + ' h ago';
   $('offline').textContent = 'Not connected — last updated ' + ago;
   $('offline').hidden = false;
