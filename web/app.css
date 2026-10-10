@@ -1,0 +1,86 @@
+/* Nag — "Patina structure, Horizon palette" (§9.1). */
+
+/* ============ tokens ============ */
+/* The §9.1 table: the light set on bare :root, the dark set redefining the
+   same names under prefers-color-scheme. The OS decides — there is no
+   data-theme attribute, no toggle, and nothing persisted (§9.1). The light
+   amber and quiet ink are not inversions of the dark ones: #E0A33E is ~2:1
+   on light slate and #67787E measured under the 4.5:1 floor. */
+:root {
+  --surface: #EFF1F0;
+  --surface-lift: #F7F8F8;
+  --sheet: #FFFFFF;
+  --field: #FFFFFF;
+  --ink: #1E282C;
+  --ink-quiet: #5C6C72;
+  --ink-faint: #97A3A7;
+  --edge: #D3DAD9;
+  --late: #96620F;
+  --late-ink: #FFFFFF;
+  --chip: #E2E6E5;
+  --chip-ink: #3C4A4E;
+  --scrim: rgba(30,40,44,.42);
+
+  /* layout tokens, not theme (§9.1): fonts are system stacks — nothing is
+     downloaded and nothing is embedded, so font-src is 'none' (§10.2) */
+  --body: "Optima", Candara, "Gill Sans", "Gill Sans MT", sans-serif;
+  --time: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+  --pad: 26px;
+  --item: 44px;
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: #212A2E;
+    --surface-lift: #263034;
+    --sheet: #1C2428;
+    --field: #1A2226;
+    --ink: #E4E9EA;
+    --ink-quiet: #8DA0A7;
+    --ink-faint: #5D7078;
+    --edge: #334147;
+    --late: #E0A33E;
+    --late-ink: #212A2E;
+    --chip: #2C383D;
+    --chip-ink: #C2CED2;
+    --scrim: rgba(8,12,14,.62);
+  }
+}
+
+/* ============ base ============ */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--surface);
+  color: var(--ink);
+  font: 15px/1.55 var(--body);
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input { font: inherit; color: inherit; }
+
+[hidden] { display: none !important; }
+
+/* ============ interaction states (§9.7) ============ */
+/* The default grey tap rectangle ignores border-radius. */
+button, input, a { -webkit-tap-highlight-color: transparent; }
+
+button { cursor: pointer; transition: transform .09s ease; }
+button:disabled { cursor: default; opacity: .45; }
+
+/* a tap is acknowledged with a slight scale */
+button:not(:disabled):active { transform: scale(.96); }
+
+/* Focus rings for the keyboard only: thumbs never see them. */
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--late); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  button { transition: none; }
+  button:not(:disabled):active { transform: none; }
+}

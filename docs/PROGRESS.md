@@ -63,11 +63,11 @@ a security one per round. Accepted blocker/should-fix by round: 3, 3, 0,
 then a `/simplify` pass, then 1, 0. The one blocker was the VAPID `sub`
 claim going out as `mailto:mailto:…`.
 
-## M3 — design
+## M3 — design (in progress)
 
 | | # | Step | Commit |
 |---|---|---|---|
-| [ ] | 30 | Design tokens and base styling | |
+| [x] | 30 | Design tokens and base styling | |
 | [ ] | 31 | Layout | |
 | [ ] | 32 | Time formatters | |
 | [ ] | 33 | Keyed list rendering | |

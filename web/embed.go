@@ -13,5 +13,5 @@ import "embed"
 // Screen. icons/ holds exactly the four PNGs §9.3 names — sources in
 // docs/icons/.
 //
-//go:embed index.html app.js sw.js manifest.webmanifest icons
+//go:embed index.html app.css app.js sw.js manifest.webmanifest icons
 var Files embed.FS
