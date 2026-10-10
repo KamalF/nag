@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/KamalF/nag/internal/config"
 	"github.com/KamalF/nag/internal/httpapi"
@@ -38,13 +39,12 @@ func runServe(stderr io.Writer) int {
 		fmt.Fprintf(stderr, "FATAL: %v\n", err)
 		return 1
 	}
-	defer st.Close()
 
-	// one sender, two callers: the sweep's digest and POST /api/push/test
-	// (§7.5), so there is no second copy of the §7.1 ladder to drift
 	// the one published config: handlers and the sweep each load a snapshot
 	// once per request or tick, and SIGHUP replaces it (§5.5)
 	live := config.NewLive(env.config, cfg, env.vapidPublic)
+	// one sender, two callers: the sweep's digest and POST /api/push/test
+	// (§7.5), so there is no second copy of the §7.1 ladder to drift
 	sender := notify.NewPushSender(st, logger, env.vapidPublic, env.vapidPrivate, env.vapidSubject)
 	api := httpapi.New(httpapi.Options{
 		Store:       st,
@@ -75,12 +75,15 @@ func runServe(stderr io.Writer) int {
 			"count", n)
 	}
 
-	// context wiring for graceful shutdown is an M4 commit (§10.1)
-	go notify.NewSweep(st, logger, sender, func() int { return live.Load().General.RetentionDays }).Run(context.Background())
-	// registered before the server starts: an unhandled SIGHUP terminates
+	// registered before the server starts: an unhandled SIGHUP terminates,
+	// and so would a SIGTERM that arrived before shutdown was wired
 	hup := make(chan os.Signal, 1)
 	signal.Notify(hup, syscall.SIGHUP)
 	go reloadOnHangup(hup, live, logger)
+	stop, cancelStop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer cancelStop()
+
+	sweep := notify.NewSweep(st, logger, sender, func() int { return live.Load().General.RetentionDays })
 	server := &http.Server{
 		Addr:              env.addr,
 		Handler:           api.Handler(),
@@ -89,11 +92,52 @@ func runServe(stderr io.Writer) int {
 		WriteTimeout:      httpapi.WriteTimeout,
 		IdleTimeout:       httpapi.IdleTimeout,
 	}
-	if err := server.ListenAndServe(); err != nil {
+	if err := serveUntil(stop, server, sweep.Run, st.Close); err != nil {
 		fmt.Fprintf(stderr, "FATAL: %v\n", err)
 		return 1
 	}
+	logger.Info("shut down cleanly")
 	return 0
+}
+
+// shutdownTimeout bounds http.Server.Shutdown (§10.1), well inside Docker's
+// 10-second stop grace.
+const shutdownTimeout = 5 * time.Second
+
+// serveUntil runs the server and the sweep until stop is cancelled — the
+// binary is PID 1 and gets no default signal handling (§10.1) — then shuts
+// down in the one order that is safe: the server stops taking requests,
+// the sweep's context is cancelled and the sweep is waited for, and only
+// then is the database closed, so its WAL checkpoint never runs under a
+// tick still writing delivery_error or deleting a subscription. The wait
+// is short because every send in the sweep is a child of its context.
+func serveUntil(stop context.Context, server *http.Server, sweep func(context.Context), closeDB func() error) error {
+	sweepCtx, cancelSweep := context.WithCancel(context.Background())
+	sweepDone := make(chan struct{})
+	go func() {
+		defer close(sweepDone)
+		sweep(sweepCtx)
+	}()
+	served := make(chan error, 1)
+	go func() { served <- server.ListenAndServe() }()
+
+	var serveErr error
+	select {
+	case err := <-served: // could not listen at all
+		serveErr = err
+	case <-stop.Done():
+		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		if err := server.Shutdown(ctx); err != nil {
+			serveErr = fmt.Errorf("shutdown: %w", err)
+		}
+	}
+	cancelSweep()
+	<-sweepDone
+	if err := closeDB(); err != nil && serveErr == nil {
+		serveErr = fmt.Errorf("close database: %w", err)
+	}
+	return serveErr
 }
 
 // reloadOnHangup is the reload path: `docker compose kill -s HUP nag` (§5.5).

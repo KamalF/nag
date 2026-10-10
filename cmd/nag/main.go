@@ -51,6 +51,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runServe(stderr)
 	case "genkeys":
 		return runGenkeys(stdout, stderr)
+	case "healthcheck":
+		return runHealthcheck(stderr)
 	case "channel":
 		return runChannel(args[1:], stdout, stderr)
 	case "config":
