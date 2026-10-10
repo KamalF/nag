@@ -91,12 +91,12 @@ button:not(:disabled):active { transform: scale(.96); }
 
 /* ---- capture bar ---- */
 .capture, .login { padding: var(--pad) var(--pad) 20px; }
-.capture input, .login input {
+.bar input, .login input {
   display: block; width: 100%; padding: 13px 16px; margin: 0 0 14px;
   font: 400 16px/1.4 var(--body); color: var(--ink);
   background: var(--field); border: 1px solid var(--edge); border-radius: 12px;
 }
-.capture input::placeholder, .login input::placeholder { color: var(--ink-quiet); }
+.bar input::placeholder, .login input::placeholder { color: var(--ink-quiet); }
 .login-error { margin: 10px 0 0; color: var(--late); font-size: 14px; }
 .login-error:empty { display: none; }
 
@@ -146,6 +146,13 @@ button:not(:disabled):active { transform: scale(.96); }
   box-shadow: inset 2px 0 0 var(--late);
 }
 
+/* the editor is the capture bar inside the row; the row's own time stays
+   beside it (§9.6), and the text and actions step aside */
+.row .txt, .row .when { cursor: text; }
+.row.editing { flex-wrap: wrap; }
+.row.editing .bar { flex: 0 0 100%; }
+.row.editing .bar input { margin-bottom: 10px; }
+
 /* Desktop reveals the actions on :hover and :focus-within. :focus-within is
    not a nicety: with :hover alone, tabbing into a row reveals nothing, and
    every action behind the reveal is focusable but invisible (§9.2). Opacity
@@ -166,7 +173,7 @@ button:not(:disabled):active { transform: scale(.96); }
    stays at 16px so iOS does not zoom on focus. */
 @media (max-width: 700px) {
   :root { --pad: 18px; }
-  .capture input, .login input { padding: 12px 14px; margin-bottom: 12px; font-size: 16px; }
+  .bar input, .login input { padding: 12px 14px; margin-bottom: 12px; font-size: 16px; }
   .chips { gap: 8px; }
   .chip { padding: 11px 15px; font-size: 13.5px; min-height: 40px; }
   .row { flex-wrap: wrap; gap: 7px 12px; padding: 12px 2px; }

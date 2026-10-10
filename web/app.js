@@ -119,11 +119,11 @@ async function init() {
     setTimeout(init, VISIBLE_POLL_MS);
     return;
   }
-  renderChips();
-  $('capture').hidden = false;
+  buildCapture();
+  document.addEventListener('keydown', onKeydown);
   // §9.2: autofocus on desktop only — on a phone it opens the keyboard over
   // the list on every load, which fights Goal 4 where glanceability matters
-  if (matchMedia('(min-width: 701px) and (hover: hover)').matches) $('text').focus();
+  if (matchMedia('(min-width: 701px) and (hover: hover)').matches) capture.input.focus();
   renderState(state);
   armPoll();
   document.addEventListener('visibilitychange', onVisibilityChange);
@@ -191,47 +191,178 @@ async function submitToken() {
   $('login-error').textContent = (await res.json()).error;
 }
 
-// --- capture bar ---
+// --- the bar: capture and row editor (§9.2) ---
 
-function renderChips() {
-  const chips = $('chips');
-  for (const p of config.presets) { // file order is UI order (§5.4)
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'chip';
-    b.textContent = p.label;
-    b.disabled = true;
-    b.addEventListener('click', () => createReminder(p.key));
-    chips.append(b);
-  }
-  // a browser may restore the field's value across a reload
-  updateChips();
-  $('text').addEventListener('input', updateChips);
-  $('text').addEventListener('keydown', (e) => {
+// createBar is the one control behind both the capture bar and the row
+// editor — same component, same keys, same behaviour (§9.2): a single-line
+// input and the preset chips in file order (§5.4). A chip carries its own
+// answer and saves on the click (Goal 1); Enter means whatever the surface
+// saves (§9.4), so each caller says what that is.
+function createBar({ value = '', placeholder = '', label, onTime, onEnter }) {
+  const el = document.createElement('div');
+  el.className = 'bar';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = value;
+  input.placeholder = placeholder;
+  input.setAttribute('aria-label', label);
+  input.enterKeyHint = 'done';
+  input.autocomplete = 'off';
+  // a typing hint, not the rule: maxlength counts UTF-16 units and the
+  // server counts bytes, so the server stays the authority (§9.2)
+  input.maxLength = 1000;
+  const chips = document.createElement('div');
+  chips.className = 'chips';
+  el.append(input, chips);
+
+  const bar = {
+    el,
+    input,
+    text: () => input.value.trim(),
+    // every chip is disabled while the input is empty or whitespace-only:
+    // a chip that visibly isn't ready beats a toast saying so (§9.2)
+    updateEnabled() {
+      const empty = bar.text() === '';
+      for (const b of chips.children) b.disabled = empty;
+    },
+    redrawChips() {
+      chips.replaceChildren();
+      for (const p of config.presets) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'chip';
+        b.textContent = p.label;
+        b.addEventListener('click', () => onTime({ preset: p.key }));
+        chips.append(b);
+      }
+      bar.updateEnabled();
+    },
+  };
+  input.addEventListener('input', bar.updateEnabled);
+  input.addEventListener('keydown', (e) => {
     // isComposing: Enter that commits an IME composition is not a save
     if (e.key !== 'Enter' || e.isComposing) return;
-    // the client resolves default_preset — the server has no fallback (§8.3)
-    createReminder(config.default_preset);
+    e.preventDefault();
+    if (bar.text() !== '') onEnter();
   });
+  bar.redrawChips();
+  return bar;
 }
 
-function updateChips() {
-  const empty = $('text').value.trim() === '';
-  for (const b of $('chips').children) b.disabled = empty;
+let capture = null;
+
+function buildCapture() {
+  capture = createBar({
+    placeholder: 'What should come back to you?',
+    label: 'New reminder',
+    onTime: createReminder,
+    // the client resolves default_preset — the server has no fallback (§8.3)
+    onEnter: () => createReminder({ preset: config.default_preset }),
+  });
+  $('capture').append(capture.el);
+  $('capture').hidden = false;
 }
 
-async function createReminder(preset) {
-  const text = $('text').value.trim();
+// createReminder posts the capture bar's text with one timing field. On
+// success the input is cleared, so the bar is ready for the next capture.
+async function createReminder(timing) {
+  const text = capture.text();
   if (text === '') return;
   const res = await fetch('/api/reminders', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, preset }),
+    body: JSON.stringify({ text, ...timing }),
   });
   if (res.status === 201) {
-    $('text').value = '';
-    updateChips();
+    capture.input.value = '';
+    capture.updateEnabled();
     refreshState(); // every successful mutation refetches (§8.2)
+  }
+}
+
+// --- the row editor (§9.2) ---
+
+// Editing a row is the capture bar again, prefilled with the raw text —
+// markdown links included. One editor at a time; opening another cancels
+// the first. The row's time stays on the row beside it, which is where you
+// read the current due time while choosing a new one (§9.6).
+let editor = null;
+
+function openEditor(row) {
+  if (editor) closeEditor();
+  row.editing = true; // the keyed render now leaves this row alone
+  const bar = createBar({
+    value: row.reminder.text,
+    label: 'Edit reminder',
+    onTime: (timing) => saveEdit(row, bar, timing),
+    // Enter saves the text without touching the time
+    onEnter: () => saveEdit(row, bar, {}),
+  });
+  editor = { row, bar };
+  row.li.classList.add('editing');
+  row.txt.hidden = true;
+  row.acts.hidden = true;
+  row.li.prepend(bar.el);
+  bar.input.focus();
+  bar.input.setSelectionRange(bar.input.value.length, bar.input.value.length);
+}
+
+// closeEditor puts the row back and runs a pass, which reconciles whatever
+// the polls skipped while it was open — including removing a row that was
+// cleared on another device meanwhile.
+function closeEditor() {
+  const { row, bar } = editor;
+  editor = null;
+  bar.el.remove();
+  row.txt.hidden = false;
+  row.acts.hidden = false;
+  row.li.classList.remove('editing');
+  row.editing = false;
+  if (lastState) renderState(lastState);
+  row.li.querySelector('.act-edit')?.focus({ preventScroll: true });
+}
+
+// saveEdit sends every field the editor shows (§9.2): text and
+// extra_channels on every save, plus a timing field only when a chip or the
+// picker chose one. Absent-means-unchanged (§8.3) makes the unchanged ones
+// harmless, so there is one body shape and no branch deciding which keys go.
+async function saveEdit(row, bar, timing) {
+  const text = bar.text();
+  if (text === '') return;
+  const res = await fetch('/api/reminders/' + row.id, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, extra_channels: row.reminder.extra_channels, ...timing }),
+  });
+  if (!res.ok) return;
+  if (editor?.row === row) closeEditor();
+  refreshState();
+}
+
+// --- keyboard (§9.4) ---
+
+// onKeydown carries the whole list: / or n focus the capture input, Esc
+// closes exactly one thing per press, innermost first. Enter belongs to
+// each surface and is handled there.
+function onKeydown(e) {
+  if (e.key === 'Escape') {
+    if (editor) {
+      closeEditor();
+    } else if (capture.input.value !== '') {
+      capture.input.value = '';
+      capture.updateEnabled();
+    } else {
+      return; // nothing open and an empty input: Esc does nothing at all
+    }
+    e.preventDefault();
+    return;
+  }
+  if ((e.key === '/' || e.key === 'n') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    // inert in a text field — otherwise unusable in the one place you are
+    // guaranteed to be typing — and under an open editor
+    if (e.target.closest('input, textarea, [contenteditable]') || editor) return;
+    e.preventDefault();
+    capture.input.focus();
   }
 }
 
@@ -874,7 +1005,14 @@ function createRow(id) {
   const acts = document.createElement('span');
   acts.className = 'acts';
   li.append(txt, when, acts);
-  return { id, li, txt, when, acts, late: null, text: null, reminder: null, editing: false };
+  const row = { id, li, txt, when, acts, late: null, text: null, reminder: null, editing: false };
+  // clicking the text or the time opens the editor; a link inside the text
+  // is followed instead (§9.2)
+  txt.addEventListener('click', (e) => {
+    if (!e.target.closest('a')) openEditor(row);
+  });
+  when.addEventListener('click', () => openEditor(row));
+  return row;
 }
 
 // rowActions: Clear for every row, plus the quick re-snooze chips on overdue
@@ -883,6 +1021,11 @@ function createRow(id) {
 function rowActions(row) {
   const path = '/api/reminders/' + row.id;
   const actions = [actionButton('Clear', row.late, () => mutate(path + '/done', 'POST'))];
+  // the row text cannot be a <button> — it contains anchors (§9.10) — so
+  // pointer users click the text and the keyboard gets a real button
+  const edit = actionButton('Edit', false, () => openEditor(row));
+  edit.classList.add('act-edit');
+  actions.push(edit);
   if (row.late) {
     for (const p of config.presets) {
       if (!p.quick) continue;
