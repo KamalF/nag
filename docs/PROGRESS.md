@@ -78,7 +78,7 @@ claim going out as `mailto:mailto:…`.
 | [x] | 38 | Toasts, undo, failure states | `5925c71` |
 | [~] | 39 | **M3 checkpoint** (no commit) | desktop verified 2026-10-10 against both mockups, light and dark, in headless Chromium; link renders in the row, flattens in the payload, raw in the editor. Phone half waits on 28 |
 
-## M4 — ship
+## M4 — ship (code complete; VPS acceptance outstanding)
 
 | | # | Step | Commit |
 |---|---|---|---|
@@ -91,8 +91,8 @@ claim going out as `mailto:mailto:…`.
 | [x] | 46 | Security headers and Content-Type rule | `5c99e8d` |
 | [x] | 47 | Graceful shutdown and `nag healthcheck` | `4a528bd` |
 | [x] | 48 | Dockerfile, .dockerignore, compose | `f0f694c` |
-| [x] | 49 | `nag.env.example` and README | |
-| [ ] | 50 | **M4 checkpoint / final acceptance** (no commit) | |
+| [x] | 49 | `nag.env.example` and README | `7c8ea59` |
+| [B] | 50 | **M4 checkpoint / final acceptance** (no commit) | needs the VPS, DNS and phones. Local stand-in done 2026-10-10: the image builds, refuses to start without keys, boots with them, writes the default config, answers healthcheck, reloads on HUP and stops cleanly |
 
 ## Commits outside the plan
 
