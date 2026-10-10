@@ -56,6 +56,13 @@ correct.
 | [B] | 28 | **Dev deployment on the VPS** (no commit) | needs the VPS, DNS, and physical devices |
 | [~] | 29 | **M2 checkpoint** (no commit) | laptop half is testable now; devices wait on 28 |
 
+### Whole-codebase review before M3
+
+A `/review-loop` over everything since `57eea7c`, three area reviewers plus
+a security one per round. Accepted blocker/should-fix by round: 3, 3, 0,
+then a `/simplify` pass, then 1, 0. The one blocker was the VAPID `sub`
+claim going out as `mailto:mailto:…`.
+
 ## M3 — design
 
 | | # | Step | Commit |
@@ -111,3 +118,8 @@ one-step-one-commit index.
 | `f5c6204` | `/simplify` round 1 — one log mechanism, one held-set predicate |
 | `4d7b388` | `/simplify` round 2 — the push-test budget derives from `WriteTimeout` |
 | `5a5df85` | `/simplify` round 3 — test-helper reuse; loop stopped here |
+| `8d89499` | final review — a guard that could not fail, and a one-tick margin |
+| `525561e` | whole-codebase review: notify — VAPID `sub` claim, payload size, link gate (SPEC §7.1, §7.3 +1 sentence each) |
+| `e3858eb` | whole-codebase review: httpapi — body decoding, login queue, one clock per PATCH |
+| `f094500` | whole-codebase review: boot — no key in the FATAL line, located TOML errors |
+| `a973120` | whole-codebase review: web — small frontend fixes |
