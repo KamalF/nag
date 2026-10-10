@@ -83,8 +83,8 @@ claim going out as `mailto:mailto:…`.
 | | # | Step | Commit |
 |---|---|---|---|
 | [x] | 40 | `nag channel` subcommand | `ab90a8b` |
-| [x] | 41 | shoutrrr wrapper, classification, `nag channel test` | |
-| [ ] | 42 | Sweep phase 3: fan-out | |
+| [x] | 41 | shoutrrr wrapper, classification, `nag channel test` | `f882778` |
+| [x] | 42 | Sweep phase 3: fan-out | |
 | [ ] | 43 | `delivery_error` surfacing | |
 | [ ] | 44 | Sweep phase 4: retention purge | |
 | [ ] | 45 | SIGHUP reload and the two hashes | |

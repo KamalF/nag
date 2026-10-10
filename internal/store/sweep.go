@@ -171,3 +171,14 @@ func stampByID(ctx context.Context, tx *sql.Tx, column string, now int64, ids []
 		"UPDATE reminders SET "+column+" = ? WHERE id IN ("+placeholders+")", args...)
 	return err
 }
+
+// SetDeliveryError writes one row's fan-out verdict as soon as its attempts
+// finish (§7.2): the classified string, or nil to clear it after a fully
+// successful fan-out. It only lands on the row as phase 1 marked it — a
+// row re-timed or re-marked since has had its delivery_error cleared by
+// that write (§4.1), and this tick's verdict must not resurrect it.
+func (s *Store) SetDeliveryError(ctx context.Context, id, markedAt int64, value *string) error {
+	_, err := s.db.ExecContext(ctx,
+		"UPDATE reminders SET delivery_error = ? WHERE id = ? AND notified_at = ?", value, id, markedAt)
+	return err
+}

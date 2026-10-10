@@ -4,7 +4,9 @@ package notify
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/KamalF/nag/internal/store"
@@ -36,6 +38,18 @@ const tooLateSeconds = 1800
 // never a missed one.
 const maxHeldLatenessSeconds = tooLateSeconds*2 + 300
 
+// fanoutBudget is phase 3's whole-phase deadline (§7.3), measured from a
+// fresh clock read when the phase starts — not from the tick's now, which
+// sequential pushes to sleeping devices can already have left 30 s behind.
+// It is a context threaded into every send, not a check between rows: a
+// row of 16 dead channels entering at 19.9 s would otherwise run 160 s
+// past it.
+const fanoutBudget = 20 * time.Second
+
+// maxDeliveryErrors caps delivery_error at three entries, then "+N more"
+// (§4.1), which bounds the column at a couple of hundred bytes.
+const maxDeliveryErrors = 3
+
 // perSendTimeout is §7.1's sweep-side deadline. Sends are sequential, so
 // three sleeping devices is a 30-second tick and the next one is skipped —
 // which the no-overlap rule already tolerates (§7.3).
@@ -49,10 +63,16 @@ type pusher interface {
 	SendTo(ctx context.Context, perSend time.Duration, payload []byte, sub store.Subscription) SendResult
 }
 
+// channelSender is the sweep's view of notify.SendChannel: one send, one
+// verdict — "" or a §4.1 classification. Injectable for the phase-3 tests.
+type channelSender func(ctx context.Context, rawURL, message string) string
+
 type Sweep struct {
 	store    *store.Store
 	log      *slog.Logger
 	sender   pusher
+	channels channelSender
+	budget   time.Duration
 	interval time.Duration
 	now      func() time.Time
 
@@ -67,7 +87,15 @@ type Sweep struct {
 }
 
 func NewSweep(st *store.Store, log *slog.Logger, sender pusher) *Sweep {
-	return &Sweep{store: st, log: log, sender: sender, interval: sweepInterval, now: time.Now}
+	return &Sweep{
+		store:    st,
+		log:      log,
+		sender:   sender,
+		channels: SendChannel,
+		budget:   fanoutBudget,
+		interval: sweepInterval,
+		now:      time.Now,
+	}
 }
 
 // Run loops until ctx is cancelled: once immediately at boot, then on the
@@ -104,12 +132,14 @@ func (s *Sweep) tick(ctx context.Context) {
 		s.log.Info("sweep: marked too late, no notification", "id", id)
 	}
 	if len(eligible) > 0 {
-		// ids only, never text (§10.4). The rows themselves are phase 3's
-		// hand-off, which lands with the fan-out (M4).
+		// ids only, never text (§10.4)
 		s.log.Info("sweep: marked", "count", len(eligible), "ids", markedIDs(eligible))
 	}
 
 	s.digest(ctx, now)
+	// after the push, so a third party's dead socket can cost channel
+	// messages and never delay this app's own notification (§7.3)
+	s.fanOut(ctx, now, eligible)
 }
 
 // digest is §7.3 phase 2: with the window open, take the whole held set,
@@ -179,6 +209,105 @@ func (s *Sweep) digest(ctx context.Context, now int64) {
 	// the only record of which reminders a given notification was about,
 	// which is a question you will have — ids, never texts (§10.4)
 	s.log.Info("push sent", "n", len(held), "ids", heldIDs(held), "subscriptions", len(subs))
+}
+
+// fanOut is §7.3 phase 3: one message per reminder, to the eligible rows
+// phase 1 just marked — gate-stamped rows are not among them, since the
+// gate means no output at all — sequentially, under one whole-phase
+// deadline. A row's verdict is written as soon as its attempts finish.
+// Rows the deadline never reached are dropped with one INFO line and never
+// retried: the row is already in "Needs you now", and the list is the
+// safety net. Nothing is coalesced or rate-limited here (§7.2).
+func (s *Sweep) fanOut(ctx context.Context, markedAt int64, eligible []store.MarkedRow) {
+	var rows []store.MarkedRow
+	for _, r := range eligible {
+		if len(r.ExtraChannels) > 0 {
+			rows = append(rows, r)
+		}
+	}
+	if len(rows) == 0 {
+		return
+	}
+	catalogue, err := s.store.ChannelRows(ctx)
+	if err != nil {
+		s.log.Error("sweep: read channels", "error", err)
+		return
+	}
+	byName := make(map[string]store.ChannelRow, len(catalogue))
+	for _, c := range catalogue {
+		byName[c.Name] = c
+	}
+
+	// WithTimeout reads the clock afresh: the phase's own start, never the
+	// tick's now (§7.3)
+	phase, cancel := context.WithTimeout(ctx, s.budget)
+	defer cancel()
+	for i, r := range rows {
+		if phase.Err() != nil {
+			s.log.Info("sweep: fan-out deadline reached, rows dropped",
+				"count", len(rows)-i, "ids", markedIDs(rows[i:]))
+			return
+		}
+		s.fanOutRow(phase, markedAt, r, byName)
+	}
+}
+
+// fanOutRow sends one reminder to each of its channels and records the
+// verdict. A disabled channel is skipped silently — you muted it yourself —
+// while a name that resolves to nothing gets one INFO line, because an
+// orphan is the same silence minus any record that you chose it (§7.2).
+// Channels the budget never reached record nothing; a send it cut short is
+// "timeout", the wrapper's word for attempted and not completed.
+func (s *Sweep) fanOutRow(phase context.Context, markedAt int64, r store.MarkedRow, byName map[string]store.ChannelRow) {
+	message := flattenLinks(r.Text) // a channel is an output, not a renderer
+	var failures []string
+	attempted := 0
+	for _, name := range r.ExtraChannels {
+		c, known := byName[name]
+		switch {
+		case !known:
+			s.log.Info("sweep: channel no longer exists, skipped", "id", r.ID, "channel", name)
+			continue
+		case !c.Enabled:
+			continue
+		case phase.Err() != nil:
+			// the budget ran out partway through this row: nothing was
+			// attempted for the rest, so nothing is recorded for them
+			continue
+		}
+		attempted++
+		if verdict := s.channels(phase, c.URL, message); verdict != "" {
+			failures = append(failures, name+": "+verdict)
+		}
+	}
+	if attempted == 0 {
+		return // the column only ever describes attempts (§4.1)
+	}
+	var value *string
+	if len(failures) > 0 {
+		joined := formatDeliveryError(failures)
+		value = &joined
+		// every delivery failure gets a line, in the same classified form
+		// as the column — never the library's text (§10.4)
+		s.log.Info("sweep: fan-out failed", "id", r.ID, "delivery_error", joined)
+	}
+	// written even when the phase was cancelled mid-row: a column that
+	// describes what a socket did is committed once the socket is done
+	write, cancel := context.WithTimeout(context.WithoutCancel(phase), deleteTimeout)
+	defer cancel()
+	if err := s.store.SetDeliveryError(write, r.ID, markedAt, value); err != nil {
+		s.log.Error("sweep: write delivery_error", "id", r.ID, "error", err)
+	}
+}
+
+// formatDeliveryError joins at most three classified entries with "; ",
+// then "; +N more" (§4.1).
+func formatDeliveryError(failures []string) string {
+	if len(failures) <= maxDeliveryErrors {
+		return strings.Join(failures, "; ")
+	}
+	return strings.Join(failures[:maxDeliveryErrors], "; ") +
+		fmt.Sprintf("; +%d more", len(failures)-maxDeliveryErrors)
 }
 
 // logHeld writes the §10.4 held-rows line, one short line per tick that
