@@ -70,7 +70,7 @@ func runServe(stderr io.Writer) int {
 	}
 
 	// context wiring for graceful shutdown is an M4 commit (§10.1)
-	go notify.NewSweep(st, logger, sender).Run(context.Background())
+	go notify.NewSweep(st, logger, sender, func() int { return cfg.General.RetentionDays }).Run(context.Background())
 	server := &http.Server{
 		Addr:              env.addr,
 		Handler:           api.Handler(),

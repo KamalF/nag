@@ -182,3 +182,15 @@ func (s *Store) SetDeliveryError(ctx context.Context, id, markedAt int64, value 
 		"UPDATE reminders SET delivery_error = ? WHERE id = ? AND notified_at = ?", value, id, markedAt)
 	return err
 }
+
+// Purge is §4.4: delete the cleared rows whose done_at is older than
+// cutoff, and return how many went. Rows still in a list are never
+// touched — done_at IS NULL is not "older than" anything.
+func (s *Store) Purge(ctx context.Context, cutoff int64) (int64, error) {
+	res, err := s.db.ExecContext(ctx,
+		"DELETE FROM reminders WHERE done_at IS NOT NULL AND done_at < ?", cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}

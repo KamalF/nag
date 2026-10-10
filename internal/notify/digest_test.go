@@ -39,6 +39,8 @@ type fixture struct {
 	sender *fakeSender
 	logs   *syncBuffer
 	clock  int64
+
+	retention int // retention_days the sweep reads each tick
 }
 
 // newFixture drives tick directly rather than Run: the cooldown is a
@@ -52,8 +54,8 @@ func newFixture(t *testing.T) *fixture {
 	}
 	t.Cleanup(func() { st.Close() })
 
-	f := &fixture{t: t, st: st, sender: &fakeSender{}, logs: &syncBuffer{}}
-	f.sweep = NewSweep(st, slog.New(slog.NewTextHandler(f.logs, nil)), f.sender)
+	f := &fixture{t: t, st: st, sender: &fakeSender{}, logs: &syncBuffer{}, retention: 30}
+	f.sweep = NewSweep(st, slog.New(slog.NewTextHandler(f.logs, nil)), f.sender, func() int { return f.retention })
 	f.sweep.now = func() time.Time { return time.Unix(f.clock, 0) }
 	return f
 }

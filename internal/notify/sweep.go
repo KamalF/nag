@@ -76,6 +76,10 @@ type Sweep struct {
 	interval time.Duration
 	now      func() time.Time
 
+	// retentionDays is read once per tick, from whatever config is
+	// current: the one value the sweep takes from the TOML (§4.4, §5.5).
+	retentionDays func() int
+
 	// lastPushAt is the cooldown's only state, and it is deliberately in
 	// memory and not durable (§7.3). It starts at zero, so the tick that
 	// runs at boot always finds the window open: a restart opens the
@@ -86,15 +90,16 @@ type Sweep struct {
 	lastPushAt int64
 }
 
-func NewSweep(st *store.Store, log *slog.Logger, sender pusher) *Sweep {
+func NewSweep(st *store.Store, log *slog.Logger, sender pusher, retentionDays func() int) *Sweep {
 	return &Sweep{
-		store:    st,
-		log:      log,
-		sender:   sender,
-		channels: SendChannel,
-		budget:   fanoutBudget,
-		interval: sweepInterval,
-		now:      time.Now,
+		store:         st,
+		log:           log,
+		sender:        sender,
+		retentionDays: retentionDays,
+		channels:      SendChannel,
+		budget:        fanoutBudget,
+		interval:      sweepInterval,
+		now:           time.Now,
 	}
 }
 
@@ -140,6 +145,24 @@ func (s *Sweep) tick(ctx context.Context) {
 	// after the push, so a third party's dead socket can cost channel
 	// messages and never delay this app's own notification (§7.3)
 	s.fanOut(ctx, now, eligible)
+	s.purge(ctx, now)
+}
+
+// purge is §7.3 phase 4 (§4.4): cleared rows older than retention_days go;
+// zero means keep them forever, and the DELETE is skipped entirely.
+func (s *Sweep) purge(ctx context.Context, now int64) {
+	days := s.retentionDays()
+	if days == 0 {
+		return
+	}
+	n, err := s.store.Purge(ctx, now-int64(days)*86400)
+	if err != nil {
+		s.log.Error("sweep: purge", "error", err)
+		return
+	}
+	if n > 0 {
+		s.log.Info("sweep: purged cleared reminders", "count", n, "retention_days", days)
+	}
 }
 
 // digest is §7.3 phase 2: with the window open, take the whole held set,
