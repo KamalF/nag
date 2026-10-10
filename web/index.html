@@ -14,7 +14,7 @@
   <meta name="theme-color" content="#212A2E" media="(prefers-color-scheme: dark)">
 </head>
 <body>
-  <main class="app">
+  <main id="main-app" class="app">
     <section id="login" class="login" hidden>
       <input id="token" type="password" placeholder="Token" aria-label="Token" autocomplete="current-password">
       <button id="login-btn" class="act pri" type="button">Log in</button>
@@ -48,6 +48,36 @@
       <span>Type above and pick when it should come back.</span>
     </section>
   </main>
+
+  <!-- §9.6: the picker sheet, outside <main> so the page behind it can be
+       made inert while it is up. Nothing is written until Set reminder. -->
+  <div id="scrim" class="scrim"></div>
+  <div id="sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="summary">
+    <div class="grab"></div>
+    <p id="summary" class="summary"></p>
+    <p id="relative" class="relative"></p>
+
+    <div class="calhead">
+      <button type="button" id="prev-month" aria-label="Previous month">‹</button>
+      <span id="month" class="month"></span>
+      <button type="button" id="next-month" aria-label="Next month">›</button>
+    </div>
+    <div id="dow" class="dow"></div>
+    <div id="grid" class="grid"></div>
+
+    <p class="tlabel">Time</p>
+    <div class="wheels">
+      <div class="band"></div>
+      <div id="hours" class="wheel" aria-label="Hour"></div>
+      <span class="colon">:</span>
+      <div id="minutes" class="wheel" aria-label="Minute"></div>
+    </div>
+
+    <div class="sheet-actions">
+      <button type="button" id="picker-cancel" class="btn-ghost">Cancel</button>
+      <button type="button" id="picker-set" class="btn-set">Set reminder</button>
+    </div>
+  </div>
   <script src="/app.js"></script>
 </body>
 </html>

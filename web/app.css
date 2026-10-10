@@ -174,6 +174,93 @@ button:not(:disabled):active { transform: scale(.96); }
 .empty p { margin: 0 0 4px; font-size: 15.5px; color: var(--ink); }
 .empty span { font: italic 14px var(--time); color: var(--ink-quiet); }
 
+/* ============ picker sheet (§9.6) ============ */
+/* after reminder-datetime-picker.html. Closed, the sheet is translated off
+   screen and visibility:hidden — still laid out, so the wheels can be
+   positioned with scrollTop before it slides in, but unfocusable. */
+.scrim {
+  position: fixed; inset: 0; z-index: 40; background: var(--scrim);
+  opacity: 0; pointer-events: none; transition: opacity .22s ease;
+}
+.scrim.open { opacity: 1; pointer-events: auto; }
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+  max-width: 460px; margin: 0 auto; max-height: 94vh; overflow-y: auto;
+  background: var(--sheet); color: var(--ink);
+  border-radius: 20px 20px 0 0; border-top: 1px solid var(--edge);
+  padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
+  box-shadow: 0 -18px 44px rgba(0,0,0,.32);
+  transform: translateY(102%); visibility: hidden;
+  transition: transform .26s cubic-bezier(.32,.72,0,1), visibility 0s linear .26s;
+}
+.sheet.open { transform: translateY(0); visibility: visible; transition-delay: 0s; }
+.sheet button { border: 0; background: transparent; }
+.grab { width: 38px; height: 4px; border-radius: 2px; background: var(--edge); margin: 2px auto 12px; }
+.summary { font: italic 400 19px/1.25 var(--time); margin: 0 0 2px; }
+.summary b { font-style: normal; font-weight: 600; }
+.relative { font-size: 12.5px; color: var(--late); margin: 0 0 14px; }
+
+.calhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.calhead .month { font-size: 15px; font-weight: 600; letter-spacing: .01em; }
+.calhead button { width: 38px; height: 38px; border-radius: 999px; color: var(--ink-quiet); font-size: 17px; line-height: 1; }
+.calhead button:active { background: var(--chip); }
+.dow { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 4px; }
+.dow span {
+  text-align: center; font-size: 10.5px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--ink-faint);
+}
+.grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.grid .cell { aspect-ratio: 1 / 1; }
+.grid button {
+  width: 100%; height: 100%; border-radius: 10px; font-size: 14.5px;
+  color: var(--ink); font-variant-numeric: tabular-nums;
+}
+.grid button:not(:disabled):active { transform: scale(.92); }
+.grid button.past { color: var(--ink-faint); }
+.grid button.today { box-shadow: inset 0 0 0 1px var(--edge); }
+.grid button[aria-pressed="true"] {
+  background: var(--late); color: var(--late-ink); font-weight: 700; box-shadow: none;
+}
+
+.tlabel {
+  font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-quiet); margin: 18px 0 6px; font-weight: 600;
+}
+.wheels {
+  position: relative; display: flex; align-items: stretch; justify-content: center; gap: 4px;
+  height: calc(var(--item) * 3);
+}
+.band {
+  position: absolute; left: 0; right: 0; top: var(--item); height: var(--item);
+  border-radius: 12px; background: var(--chip); pointer-events: none;
+}
+/* plain scroll containers: snap, one item of padding so the first and last
+   can centre, an edge fade — no drag handling, no library */
+.wheel {
+  position: relative; flex: 0 1 108px; overflow-y: auto; scroll-snap-type: y mandatory;
+  padding: var(--item) 0; scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(transparent, #000 26%, #000 74%, transparent);
+  mask-image: linear-gradient(transparent, #000 26%, #000 74%, transparent);
+}
+.wheel::-webkit-scrollbar { display: none; }
+.wheel button {
+  display: block; width: 100%; height: var(--item); scroll-snap-align: center;
+  font: 400 20px/var(--item) var(--time); color: var(--ink-faint);
+  font-variant-numeric: tabular-nums; transition: color .12s ease, transform .12s ease;
+}
+.wheel button.sel { color: var(--ink); font-weight: 600; transform: scale(1.06); }
+.colon { align-self: center; font: 600 20px/1 var(--time); color: var(--ink-quiet); padding: 0 2px; }
+
+.sheet-actions { display: flex; gap: 10px; margin-top: 18px; }
+.sheet-actions button { flex: 1; padding: 14px; border-radius: 12px; font-size: 15px; }
+.sheet .btn-ghost { background: transparent; border: 1px solid var(--edge); color: var(--ink-quiet); }
+.sheet .btn-set { background: var(--ink); color: var(--surface); font-weight: 600; }
+.sheet-actions button:not(:disabled):active { transform: scale(.985); }
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet, .scrim, .wheel button { transition: none; }
+}
+
 /* ============ mobile (§9.9) ============ */
 /* Rows wrap: the text gets the full width, then the time bottom-left and
    the actions bottom-right. Tap targets at least 40px; the capture input

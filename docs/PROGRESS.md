@@ -72,8 +72,8 @@ claim going out as `mailto:mailto:…`.
 | [x] | 32 | Time formatters | `aff395f` |
 | [x] | 33 | Keyed list rendering | `c2b6af0` |
 | [x] | 34 | Inline row editor | `2238ea5` |
-| [x] | 35 | Markdown link rendering (client) | |
-| [ ] | 36 | Picker sheet | |
+| [x] | 35 | Markdown link rendering (client) | `5c0cf13` |
+| [x] | 36 | Picker sheet | |
 | [ ] | 37 | Channel selector | |
 | [ ] | 38 | Toasts, undo, failure states | |
 | [ ] | 39 | **M3 checkpoint** (no commit) | |

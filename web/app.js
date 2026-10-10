@@ -120,6 +120,7 @@ async function init() {
     return;
   }
   buildCapture();
+  wirePicker();
   document.addEventListener('keydown', onKeydown);
   // §9.2: autofocus on desktop only — on a phone it opens the keyboard over
   // the list on every load, which fights Goal 4 where glanceability matters
@@ -198,7 +199,7 @@ async function submitToken() {
 // input and the preset chips in file order (§5.4). A chip carries its own
 // answer and saves on the click (Goal 1); Enter means whatever the surface
 // saves (§9.4), so each caller says what that is.
-function createBar({ value = '', placeholder = '', label, onTime, onEnter }) {
+function createBar({ value = '', placeholder = '', label, onTime, onEnter, pickFrom }) {
   const el = document.createElement('div');
   el.className = 'bar';
   const input = document.createElement('input');
@@ -235,6 +236,15 @@ function createBar({ value = '', placeholder = '', label, onTime, onEnter }) {
         b.addEventListener('click', () => onTime({ preset: p.key }));
         chips.append(b);
       }
+      // "Pick a time" is not a preset (§5.4): the client renders it after
+      // the configured ones, and the picker's Set reminder is its save
+      const pick = document.createElement('button');
+      pick.type = 'button';
+      pick.className = 'chip';
+      pick.textContent = 'Pick a time';
+      pick.addEventListener('click', () =>
+        openPicker({ opener: pick, from: pickFrom?.(), onSet: (dueAt) => onTime({ due_at: dueAt }) }));
+      chips.append(pick);
       bar.updateEnabled();
     },
   };
@@ -267,17 +277,17 @@ function buildCapture() {
 // success the input is cleared, so the bar is ready for the next capture.
 async function createReminder(timing) {
   const text = capture.text();
-  if (text === '') return;
+  if (text === '') return false;
   const res = await fetch('/api/reminders', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text, ...timing }),
   });
-  if (res.status === 201) {
-    capture.input.value = '';
-    capture.updateEnabled();
-    refreshState(); // every successful mutation refetches (§8.2)
-  }
+  if (res.status !== 201) return false;
+  capture.input.value = '';
+  capture.updateEnabled();
+  refreshState(); // every successful mutation refetches (§8.2)
+  return true;
 }
 
 // --- the row editor (§9.2) ---
@@ -297,6 +307,8 @@ function openEditor(row) {
     onTime: (timing) => saveEdit(row, bar, timing),
     // Enter saves the text without touching the time
     onEnter: () => saveEdit(row, bar, {}),
+    // the picker opens on the stored moment when it is still ahead (§9.6)
+    pickFrom: () => row.reminder.due_at,
   });
   editor = { row, bar };
   row.li.classList.add('editing');
@@ -319,7 +331,11 @@ function closeEditor() {
   row.li.classList.remove('editing');
   row.editing = false;
   if (lastState) renderState(lastState);
-  row.li.querySelector('.act-edit')?.focus({ preventScroll: true });
+  const edit = row.li.querySelector('.act-edit');
+  // saved from the picker: the chip that opened it has just gone with the
+  // editor, so the sheet hands focus here when it closes
+  if (picker) picker.returnTo = edit;
+  else edit?.focus({ preventScroll: true });
 }
 
 // saveEdit sends every field the editor shows (§9.2): text and
@@ -328,15 +344,279 @@ function closeEditor() {
 // harmless, so there is one body shape and no branch deciding which keys go.
 async function saveEdit(row, bar, timing) {
   const text = bar.text();
-  if (text === '') return;
+  if (text === '') return false;
   const res = await fetch('/api/reminders/' + row.id, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text, extra_channels: row.reminder.extra_channels, ...timing }),
   });
-  if (!res.ok) return;
+  if (!res.ok) return false;
   if (editor?.row === row) closeEditor();
   refreshState();
+  return true;
+}
+
+// --- the picker sheet (§9.6) ---
+
+// The wheels and the calendar only ever move a pending value; nothing is
+// written until Set reminder — the one place a two-step commit is right,
+// since saving per scroll-snap would PATCH once per notch of the minute
+// wheel. picker is null while the sheet is down.
+let picker = null;
+
+const ITEM_PX = 44; // --item: one wheel row
+const WHEEL_SETTLE_MS = 90;
+const PAST_SENTENCE = "in the past — it'll be waiting in Needs you now, and nothing will be sent";
+const monthFormat = new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' });
+const shortWeekdayFormat = new Intl.DateTimeFormat(undefined, { weekday: 'short' });
+
+// openPicker shows the sheet for one save. opener is the chip that opened
+// it, and gets focus back on close; from is the row's due_at when editing.
+function openPicker({ opener, from, onSet }) {
+  const { date, hour, minute } = openingState(from);
+  picker = {
+    opener,
+    returnTo: null,
+    onSet,
+    date, // local midnight of the chosen day
+    view: new Date(date.getFullYear(), date.getMonth(), 1),
+    hour,
+    minute,
+  };
+  $('main-app').inert = true; // nothing focusable behind the scrim
+  $('scrim').classList.add('open');
+  $('sheet').classList.add('open');
+  buildWeekdays();
+  buildCalendar();
+  buildWheels();
+  renderSummary();
+  $('picker-set').disabled = false;
+  $('picker-set').focus();
+}
+
+// closePicker discards the pending value and returns focus to the chip
+// that opened the sheet, so a second Esc lands on what is under it (§9.4).
+function closePicker() {
+  const { opener, returnTo } = picker;
+  picker = null;
+  $('main-app').inert = false;
+  $('scrim').classList.remove('open');
+  $('sheet').classList.remove('open');
+  const target = returnTo ?? opener;
+  // a capture save empties the input, which disables the chip that opened
+  // the sheet; its bar's input is the nearest place to land instead
+  if (target.disabled) target.closest('.bar')?.querySelector('input')?.focus({ preventScroll: true });
+  else target.focus({ preventScroll: true });
+}
+
+// openingState is §9.6's one rule for both modes: the stored moment — hour
+// clamped into the range, minute always 00 — when that is still ahead of
+// now(), and otherwise the new-reminder default: default_time clamped, on
+// today if it is still ahead, else tomorrow. The test is on the value the
+// sheet would show, because the minute reset can itself move a future row
+// into the past (14:30 today reads back as 14:00), and the sheet never opens
+// on the in-the-past warning.
+function openingState(from) {
+  const { hour_min: lo, hour_max: hi } = config.picker;
+  const clamp = (h) => Math.min(Math.max(h, lo), hi);
+  if (from !== undefined) {
+    const stored = new Date(from * 1000);
+    const date = new Date(stored.getFullYear(), stored.getMonth(), stored.getDate());
+    const hour = clamp(stored.getHours());
+    if (moment(date, hour, 0) > now()) return { date, hour, minute: 0 };
+  }
+  const [h, m] = config.picker.default_time.split(':').map(Number);
+  const hour = clamp(h);
+  const today = new Date(now() * 1000);
+  const date = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  if (moment(date, hour, m) <= now()) date.setDate(date.getDate() + 1);
+  return { date, hour, minute: m };
+}
+
+// moment reads the chosen wall-clock time in the browser's timezone and
+// returns Unix seconds (§6, §9.3). A time inside a spring-forward gap has no
+// local instant; new Date normalises it forward, as Go's time.Date does, and
+// the summary shows the moment that will actually be stored.
+function moment(date, hour, minute) {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate(), hour, minute, 0, 0);
+  return Math.floor(d.getTime() / 1000);
+}
+
+function pendingMoment() {
+  return moment(picker.date, picker.hour, picker.minute);
+}
+
+// renderSummary is the confirmation read before pressing Set: the full date
+// with the time emphasised, and the relative line — the future rows of
+// whenText verbatim, or the fixed past sentence, which never says "late"
+// about a time not yet saved (§9.11). Past moments are allowed.
+function renderSummary() {
+  const dueAt = pendingMoment();
+  const { date, time } = fullText(dueAt);
+  const b = document.createElement('b');
+  b.textContent = time;
+  $('summary').replaceChildren(document.createTextNode(date + ' at '), b);
+  $('relative').textContent = dueAt - now() <= 0 ? PAST_SENTENCE : whenText(dueAt);
+}
+
+// buildWeekdays labels the columns from week_start, in the device locale.
+function buildWeekdays() {
+  const start = config.picker.week_start === 'sunday' ? 0 : 1;
+  const sunday = new Date(2023, 0, 1); // a Sunday
+  $('dow').replaceChildren();
+  for (let i = 0; i < 7; i++) {
+    const span = document.createElement('span');
+    span.textContent = shortWeekdayFormat.format(
+      new Date(sunday.getFullYear(), sunday.getMonth(), sunday.getDate() + ((start + i) % 7)));
+    $('dow').append(span);
+  }
+}
+
+// buildCalendar draws the viewed month: today with a thin ring, the chosen
+// day amber-filled, past days dimmed but still tappable — backdating is
+// sometimes intentional. "Today" and "past" come from now(), never from
+// the device clock directly. No year stepper and no bound on paging.
+function buildCalendar() {
+  const { view } = picker;
+  const start = config.picker.week_start === 'sunday' ? 0 : 1;
+  const nowDate = new Date(now() * 1000);
+  const today = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate());
+  $('month').textContent = monthFormat.format(view);
+
+  const grid = $('grid');
+  grid.replaceChildren();
+  const lead = (view.getDay() - start + 7) % 7;
+  for (let i = 0; i < lead; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    grid.append(cell);
+  }
+  const days = new Date(view.getFullYear(), view.getMonth() + 1, 0).getDate();
+  for (let d = 1; d <= days; d++) {
+    const date = new Date(view.getFullYear(), view.getMonth(), d);
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = d;
+    b.setAttribute('aria-label', longDateFormat.format(date));
+    if (date < today) b.classList.add('past');
+    if (+date === +today) b.classList.add('today');
+    b.setAttribute('aria-pressed', String(+date === +picker.date));
+    b.addEventListener('click', () => {
+      picker.date = date;
+      buildCalendar();
+      renderSummary();
+      grid.querySelector('[aria-pressed="true"]')?.focus();
+    });
+    cell.append(b);
+    grid.append(cell);
+  }
+}
+
+function pageMonth(delta) {
+  picker.view = new Date(picker.view.getFullYear(), picker.view.getMonth() + delta, 1);
+  buildCalendar();
+}
+
+// buildWheels fills the two wheels: hours hour_min..hour_max — a hard
+// range, with no escape hatch (§9.6) — and minutes 0..59 by minute_step.
+function buildWheels() {
+  const { hour_min: lo, hour_max: hi, minute_step: step } = config.picker;
+  const hours = [];
+  for (let h = lo; h <= hi; h++) hours.push(h);
+  const minutes = [];
+  for (let m = 0; m < 60; m += step) minutes.push(m);
+  fillWheel($('hours'), hours, picker.hour);
+  fillWheel($('minutes'), minutes, picker.minute);
+}
+
+// fillWheel: each value is a real button that scrolls itself to the centre
+// — tap and keyboard both work — and the selection is read back from
+// scrollTop once scrolling settles. Nothing here drags.
+function fillWheel(el, values, current) {
+  el.replaceChildren();
+  values.forEach((v, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = String(v).padStart(2, '0');
+    b.addEventListener('click', () => el.scrollTo({ top: i * ITEM_PX, behavior: scrollBehavior() }));
+    el.append(b);
+  });
+  el.values = values;
+  const idx = Math.max(0, values.indexOf(current));
+  el.scrollTop = idx * ITEM_PX;
+  markWheel(el, idx);
+}
+
+function markWheel(el, idx) {
+  [...el.children].forEach((b, i) => b.classList.toggle('sel', i === idx));
+}
+
+function onWheelScroll(el, key) {
+  const idx = () => Math.min(el.values.length - 1, Math.max(0, Math.round(el.scrollTop / ITEM_PX)));
+  let settle = null;
+  el.addEventListener('scroll', () => {
+    if (!picker) return;
+    markWheel(el, idx());
+    clearTimeout(settle);
+    settle = setTimeout(() => {
+      if (!picker) return;
+      picker[key] = el.values[idx()];
+      renderSummary();
+    }, WHEEL_SETTLE_MS);
+  }, { passive: true });
+}
+
+function scrollBehavior() {
+  return matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+}
+
+// setPicked is the whole write — POST from the capture bar, PATCH from a
+// row editor — and closes the sheet on success only, so a failed save
+// leaves the chosen moment on screen.
+async function setPicked() {
+  const set = $('picker-set');
+  if (set.disabled) return;
+  set.disabled = true;
+  const ok = await picker.onSet(pendingMoment());
+  if (!picker) return;
+  set.disabled = false;
+  if (ok) closePicker();
+}
+
+// trapFocus keeps Tab inside the sheet while it is up: the page behind is
+// inert, and tabbing into a list you cannot see is a trap the other way.
+function trapFocus(e) {
+  if (e.key !== 'Tab') return;
+  const focusable = [...$('sheet').querySelectorAll('button:not(:disabled)')];
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
+function wirePicker() {
+  $('prev-month').addEventListener('click', () => pageMonth(-1));
+  $('next-month').addEventListener('click', () => pageMonth(1));
+  $('picker-cancel').addEventListener('click', closePicker);
+  $('picker-set').addEventListener('click', setPicked);
+  $('scrim').addEventListener('click', closePicker);
+  onWheelScroll($('hours'), 'hour');
+  onWheelScroll($('minutes'), 'minute');
+  $('sheet').addEventListener('keydown', (e) => {
+    trapFocus(e);
+    // Enter anywhere in the sheet activates Set reminder (§9.4)
+    if (e.key === 'Enter' && !e.isComposing) {
+      e.preventDefault();
+      setPicked();
+    }
+  });
 }
 
 // --- keyboard (§9.4) ---
@@ -346,7 +626,9 @@ async function saveEdit(row, bar, timing) {
 // each surface and is handled there.
 function onKeydown(e) {
   if (e.key === 'Escape') {
-    if (editor) {
+    if (picker) {
+      closePicker();
+    } else if (editor) {
       closeEditor();
     } else if (capture.input.value !== '') {
       capture.input.value = '';
@@ -359,8 +641,9 @@ function onKeydown(e) {
   }
   if ((e.key === '/' || e.key === 'n') && !e.ctrlKey && !e.metaKey && !e.altKey) {
     // inert in a text field — otherwise unusable in the one place you are
-    // guaranteed to be typing — and under an open editor
-    if (e.target.closest('input, textarea, [contenteditable]') || editor) return;
+    // guaranteed to be typing — and under an open editor or the sheet,
+    // since focusing the capture bar behind a scrim is nobody's intent
+    if (e.target.closest('input, textarea, [contenteditable]') || editor || picker) return;
     e.preventDefault();
     capture.input.focus();
   }
