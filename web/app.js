@@ -391,7 +391,9 @@ async function createReminder(timing) {
   // a save that fails leaves what you typed exactly where it is, next to
   // its toast (§9.2)
   if (!result.ok) return false;
-  capture.input.value = '';
+  // only the input is left editable while a save is in flight, so whatever
+  // was typed meanwhile is the next reminder and stays
+  if (capture.text() === text) capture.input.value = '';
   capture.updateEnabled();
   capture.resetChannels();
   return true;
@@ -400,13 +402,22 @@ async function createReminder(timing) {
 // --- the row editor (§9.2) ---
 
 // Editing a row is the capture bar again, prefilled with the raw text —
-// markdown links included. One editor at a time; opening another cancels
-// the first. The row's time stays on the row beside it, which is where you
-// read the current due time while choosing a new one (§9.6).
+// markdown links included. One editor at a time: opening another closes
+// the first, unless it holds unsaved text, which is never thrown away. The
+// row's time stays on the row beside it, which is where you read the
+// current due time while choosing a new one (§9.6).
 let editor = null;
 
 function openEditor(row) {
-  if (editor) closeEditor();
+  if (editor) {
+    // never eat typing: the open editor's own time, or another row, does
+    // not replace an editor holding unsaved text — focus goes back to it
+    if (editor.row === row || editor.bar.input.value !== editor.row.reminder.text) {
+      editor.bar.input.focus();
+      return;
+    }
+    closeEditor();
+  }
   row.editing = true; // the keyed render now leaves this row alone
   const bar = createBar({
     value: row.reminder.text,
@@ -448,7 +459,7 @@ function closeEditor() {
   const edit = row.li.querySelector('.act-edit');
   // saved from the picker: the chip that opened it has just gone with the
   // editor, so the sheet hands focus here when it closes
-  if (picker) picker.returnTo = edit;
+  if (picker?.saving && bar.el.contains(picker.opener)) picker.returnTo = edit;
   else edit?.focus({ preventScroll: true });
 }
 
@@ -462,7 +473,18 @@ async function saveEdit(row, bar, timing) {
   const result = await userAction('/api/reminders/' + row.id, 'PATCH',
     { text, extra_channels: bar.selectedChannels(), ...timing });
   if (!result.ok) return false;
-  if (editor?.row === row) closeEditor();
+  // this save's own editor only: Esc'd and reopened on the same row, the
+  // new editor is someone else's typing
+  if (editor?.bar !== bar) return true;
+  if (bar.text() === text) {
+    closeEditor();
+  } else {
+    // typed into while the save was in flight: the save landed, and what
+    // was typed since stays in the open editor, measured against the row
+    // as it now stands — whose time, beside the editor, is repainted
+    row.reminder = result.data;
+    row.when.textContent = whenText(result.data.due_at);
+  }
   return true;
 }
 
@@ -487,6 +509,7 @@ function openPicker({ opener, from, onSet }) {
   picker = {
     opener,
     returnTo: null,
+    saving: false,
     onSet,
     date, // local midnight of the chosen day
     view: new Date(date.getFullYear(), date.getMonth(), 1),
@@ -688,11 +711,20 @@ function scrollBehavior() {
 async function setPicked() {
   const set = $('picker-set');
   if (set.disabled) return;
+  const session = picker;
+  session.saving = true;
   set.disabled = true;
-  const ok = await picker.onSet(pendingMoment());
-  if (!picker) return;
+  const ok = await session.onSet(pendingMoment());
+  session.saving = false;
+  // Esc'd while saving, and maybe another sheet opened since: this save
+  // must not close or refocus a session it does not own
+  if (picker !== session) return;
   set.disabled = false;
-  if (ok) closePicker();
+  if (ok) {
+    closePicker();
+  } else {
+    set.focus(); // disabling it blurred it; keep focus inside the dialog
+  }
 }
 
 // trapFocus keeps Tab inside the sheet while it is up: the page behind is
@@ -1382,6 +1414,14 @@ const rows = new Map();
 // server-sorted order with its id tiebreak (§8.2) is what makes "only what
 // moved, moves" stable.
 function renderLists(state) {
+  // A pass can take focus away from a row action two ways: moving the row
+  // (placeZone moves a row that went up its zone, and moving a node blurs
+  // what is inside it), or rebuilding its actions (a row that changed zone).
+  // Focus is restored by identity — the same row, the same action — so both
+  // cases come back, typically the Edit button a closing editor just took.
+  const focused = document.activeElement;
+  const focusedAction = focused?.dataset?.action;
+  const focusedRow = focused?.closest?.('li.row')?.dataset.id;
   const wanted = new Set();
   for (const r of state.overdue) wanted.add(String(r.id));
   for (const r of state.later) wanted.add(String(r.id));
@@ -1394,18 +1434,34 @@ function renderLists(state) {
     row.li.remove();
     rows.delete(id);
   }
+  if (document.activeElement !== focused && focusedAction && rows.has(focusedRow)) {
+    const again = [...rows.get(focusedRow).acts.children].find((b) => b.dataset.action === focusedAction);
+    again?.focus({ preventScroll: true });
+  }
 }
 
 // placeZone walks the zone's list against the current children with a
 // cursor: a node already in place is passed over untouched, and only an
-// out-of-place one is inserted. Rows leaving the zone drift past the end,
-// where the other zone's pass or the removal above picks them up.
+// out-of-place one is inserted. Two kinds of child are stepped over rather
+// than placed: a row with its editor open, which no pass may move — moving
+// it would blur the input mid-sentence — and a row that is leaving this
+// zone, which the other zone's pass or the removal above picks up. Without
+// that, one departure would reinsert every row below it and drop the focus
+// inside them (§9.2).
 function placeZone(ul, list, late) {
-  let cursor = ul.firstElementChild;
+  const here = new Set(list.map((r) => String(r.id)));
+  const settled = (node) => {
+    while (node && (rows.get(node.dataset.id)?.editing || !here.has(node.dataset.id))) {
+      node = node.nextElementSibling;
+    }
+    return node;
+  };
+  let cursor = settled(ul.firstElementChild);
   for (const r of list) {
     const row = updateRow(r, late);
+    if (row.editing) continue;
     if (row.li === cursor) {
-      cursor = cursor.nextElementSibling;
+      cursor = settled(cursor.nextElementSibling);
       continue;
     }
     ul.insertBefore(row.li, cursor);
@@ -1489,7 +1545,9 @@ function rowActions(row) {
   if (row.late) {
     for (const p of config.presets) {
       if (!p.quick) continue;
-      actions.push(actionButton(p.label, false, () => userAction(path, 'PATCH', { preset: p.key })));
+      const chip = actionButton(p.label, false, () => userAction(path, 'PATCH', { preset: p.key }));
+      chip.dataset.action = 'preset:' + p.key;
+      actions.push(chip);
     }
   }
   return actions;
@@ -1502,6 +1560,7 @@ function actionButton(label, primary, onClick) {
   b.type = 'button';
   b.className = primary ? 'act pri' : 'act';
   b.textContent = label;
+  b.dataset.action = label; // what a pass restores focus to (renderLists)
   b.addEventListener('click', async () => {
     if (b.disabled) return;
     b.disabled = true;
@@ -1583,7 +1642,9 @@ async function repairPresets() {
   capture.redrawChips();
   editor?.bar.redrawChips();
   for (const row of rows.values()) {
-    if (row.late && !row.editing) row.acts.replaceChildren(...rowActions(row));
+    // an editing row too: its actions are hidden, not frozen, and come back
+    // when the editor closes
+    if (row.late) row.acts.replaceChildren(...rowActions(row));
   }
   toast('The preset list changed on the server — the chips are current now, pick again.');
 }
@@ -1621,6 +1682,11 @@ function toast(message, { action, onAction, ms = ERROR_TOAST_MS } = {}) {
     });
     el.append(b);
   }
+  // a tap dismisses it: on a short phone a toast over the picker sits on
+  // its summary line, which you want to read again before retrying
+  el.addEventListener('click', (e) => {
+    if (e.target === el || e.target === text) dismiss();
+  });
   $('toasts').append(el);
   setTimeout(dismiss, ms);
 }

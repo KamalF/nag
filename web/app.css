@@ -122,16 +122,20 @@ button:not(:disabled):active { transform: scale(.96); }
 /* ---- failure states (§9.2) ---- */
 .offline { margin: 0; padding: 0 var(--pad) 14px; font-size: 13px; color: var(--ink-quiet); }
 .toasts {
-  position: fixed; left: 0; right: 0; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 30;
+  /* above the scrim and the sheet: a failed Set reminder must be seen */
+  position: fixed; left: 0; right: 0; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 60;
   display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none;
 }
 .toast {
-  pointer-events: auto; display: flex; align-items: center; gap: 14px;
+  pointer-events: auto; cursor: pointer; display: flex; align-items: center; gap: 14px;
   max-width: min(520px, calc(100% - 32px)); padding: 10px 12px 10px 16px; border-radius: 12px;
   background: var(--ink); color: var(--surface); font-size: 14px;
   box-shadow: 0 8px 24px rgba(0,0,0,.25);
 }
 .toast .act.pri { border-color: var(--surface); color: var(--surface); }
+/* while the sheet is up, toasts move to the top: at the bottom they would
+   sit on Cancel and Set reminder, the two buttons a failed Set needs */
+.sheet.open ~ .toasts { top: calc(16px + env(safe-area-inset-top)); bottom: auto; }
 
 /* ---- notification slot ---- */
 .slot { padding: 0 var(--pad) 14px; }
