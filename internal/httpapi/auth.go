@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
-	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -120,19 +119,39 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Token string `json:"token"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "malformed json body")
+	if errMessage := decodeBody(r, &body); errMessage != "" {
+		writeError(w, http.StatusBadRequest, errMessage)
 		return
 	}
 	if subtle.ConstantTimeCompare([]byte(body.Token), []byte(s.token)) != 1 {
-		s.loginMu.Lock()
-		time.Sleep(s.loginSleep)
-		s.loginMu.Unlock()
-		writeError(w, http.StatusUnauthorized, "wrong token")
+		s.failLoginSlowly(w, r)
 		return
 	}
 	s.setSessionCookie(w, time.Now())
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// failLoginSlowly is the §8.1 rate limit: failures are serialised and each
+// holds the slot for ~250 ms. Both waits watch the request's context, so a
+// client that gave up leaves the queue at once — a mutex and a bare sleep
+// would keep every abandoned wrong-token request alive, conn and all, until
+// its turn came, which an unauthenticated flood can grow without bound.
+func (s *Server) failLoginSlowly(w http.ResponseWriter, r *http.Request) {
+	// the 401 is written either way, so the §10.4 line records what the
+	// request was even when nobody is left to read the answer
+	defer writeError(w, http.StatusUnauthorized, "wrong token")
+	select {
+	case s.loginSlot <- struct{}{}:
+	case <-r.Context().Done():
+		return
+	}
+	defer func() { <-s.loginSlot }()
+	timer := time.NewTimer(s.loginSleep)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+	case <-r.Context().Done():
+	}
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {

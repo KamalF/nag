@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/KamalF/nag/internal/config"
@@ -66,7 +65,8 @@ type Server struct {
 	// only when M4's reload changes what the client can see.
 	configVersion int
 
-	loginMu    sync.Mutex
+	// loginSlot serialises failed logins: one token held at a time
+	loginSlot  chan struct{}
 	loginSleep time.Duration
 }
 
@@ -97,6 +97,7 @@ func New(o Options) *Server {
 		push:          o.Push,
 		pushBudget:    pushTestBudget,
 		configVersion: 1,
+		loginSlot:     make(chan struct{}, 1),
 		loginSleep:    250 * time.Millisecond,
 	}
 }
@@ -113,7 +114,8 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	// Methodless on purpose: a method-specific "GET /" plus the methodless
 	// "/api/" catch-all is a ServeMux precedence conflict (neither pattern
-	// wins), and FileServer already answers non-GET methods with 405.
+	// wins). FileServer does not check the method, so a POST to a static path
+	// is answered like a GET — harmless, since nothing static mutates.
 	mux.Handle("/", http.FileServerFS(s.web))
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("POST /login", s.handleLogin)

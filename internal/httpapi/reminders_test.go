@@ -46,6 +46,8 @@ func TestCreateReminderValidation(t *testing.T) {
 		{"empty after trimming", fmt.Sprintf(`{"text":"  \t ","due_at":%d}`, future), []string{"text"}},
 		{"over 1000 bytes", fmt.Sprintf(`{"text":%q,"due_at":%d}`, strings.Repeat("x", 1001), future),
 			[]string{"1001", "1000"}},
+		{"line separator is a newline too", fmt.Sprintf(`{"text":"a\u2028b","due_at":%d}`, future),
+			[]string{"control character"}},
 		{"newline names the character class", fmt.Sprintf(`{"text":"a\nb","due_at":%d}`, future),
 			[]string{"control character"}},
 		{"both preset and due_at", fmt.Sprintf(`{"text":"x","preset":"30min","due_at":%d}`, future),
@@ -58,9 +60,18 @@ func TestCreateReminderValidation(t *testing.T) {
 			[]string{"946684800", "4102444800"}},
 		{"unknown channel named", fmt.Sprintf(`{"text":"x","due_at":%d,"extra_channels":["nope"]}`, future),
 			[]string{`"nope"`}},
-		{"unknown field rejected", fmt.Sprintf(`{"text":"x","due_at":%d,"quik":true}`, future),
+		{"unknown field rejected by name", fmt.Sprintf(`{"text":"x","due_at":%d,"quik":true}`, future),
+			[]string{"unknown field", "quik"}},
+		{"invalid utf-8", fmt.Sprintf("{\"text\":\"a\xffb\",\"due_at\":%d}", future),
+			[]string{"utf-8"}},
+		{"lone surrogate escape", fmt.Sprintf(`{"text":"a\ud800b","due_at":%d}`, future),
+			[]string{"utf-8"}},
+		{"lone low surrogate escape", fmt.Sprintf(`{"text":"a\udc00b","due_at":%d}`, future),
+			[]string{"utf-8"}},
+		{"text not a string", fmt.Sprintf(`{"text":5,"due_at":%d}`, future),
 			[]string{"malformed"}},
 		{"malformed json", `{"text":`, []string{"malformed"}},
+		{"trailing data after the object", fmt.Sprintf(`{"text":"x","due_at":%d} junk`, future), []string{"malformed"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -99,6 +110,15 @@ func TestCreateReminderShape(t *testing.T) {
 	}
 	if channels, ok := got["extra_channels"].([]any); !ok || len(channels) != 0 {
 		t.Errorf("extra_channels = %v, want []", got["extra_channels"])
+	}
+}
+
+// A paired surrogate escape is ordinary text; only a lone half is invalid.
+func TestCreateAcceptsEscapedSurrogatePair(t *testing.T) {
+	h := testServer(t, nil).Handler()
+	got := createReminder(t, h, fmt.Sprintf(`{"text":"ok \ud83d\ude00 \\ud800","due_at":%d}`, time.Now().Unix()+3600))
+	if got["text"] != "ok \U0001F600 \\ud800" {
+		t.Errorf("text = %q", got["text"])
 	}
 }
 

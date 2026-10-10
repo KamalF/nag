@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -120,6 +121,52 @@ func TestLoginWrongToken(t *testing.T) {
 		t.Error("a failed login set a cookie")
 	}
 	assertErrorShape(t, rec, "wrong token")
+}
+
+// A wrong-token request the client abandoned must leave the §8.1 queue at
+// once: held behind the slot or the sleep, every dropped connection of an
+// unauthenticated flood would stay alive until its turn.
+func TestAbandonedFailedLoginLeavesTheQueue(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		slotHeld bool // true: waiting for the slot; false: holding it, asleep
+	}{{"waiting for the slot", true}, {"holding the slot", false}} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := testServer(t, nil)
+			s.loginSleep = time.Hour
+			if tt.slotHeld {
+				s.loginSlot <- struct{}{} // another failure holds the slot
+			}
+			h := s.Handler()
+
+			ctx, cancel := context.WithCancel(t.Context())
+			done := make(chan int)
+			go func() {
+				rec := httptest.NewRecorder()
+				h.ServeHTTP(rec, httptest.NewRequestWithContext(ctx, http.MethodPost, "/login",
+					strings.NewReader(`{"token":"wrong"}`)))
+				done <- rec.Code
+			}()
+			if !tt.slotHeld {
+				// cancel only once the request is inside the sleep
+				for len(s.loginSlot) == 0 {
+					time.Sleep(time.Millisecond)
+				}
+			}
+			cancel()
+			select {
+			case code := <-done:
+				if code != http.StatusUnauthorized {
+					t.Errorf("status = %d, want 401 for the log line", code)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("an abandoned failed login stayed queued")
+			}
+			if !tt.slotHeld && len(s.loginSlot) != 0 {
+				t.Error("the abandoned request kept the slot")
+			}
+		})
+	}
 }
 
 func TestLogoutClearsTheCookie(t *testing.T) {

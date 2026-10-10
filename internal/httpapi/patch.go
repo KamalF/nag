@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"slices"
 	"strconv"
@@ -36,8 +35,8 @@ func (s *Server) handlePatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var fields map[string]json.RawMessage
-	if err := json.NewDecoder(r.Body).Decode(&fields); err != nil {
-		writeError(w, http.StatusBadRequest, "malformed json body")
+	if errMessage := decodeBody(r, &fields); errMessage != "" {
+		writeError(w, http.StatusBadRequest, errMessage)
 		return
 	}
 	if len(fields) == 0 {
@@ -45,7 +44,11 @@ func (s *Server) handlePatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	upd, errMessage, err := s.buildUpdate(r.Context(), fields, current)
+	// one clock read per request (§8.2): the preset resolves from it and the
+	// backdated check compares against it, so a chip tapped a hair before
+	// its own target cannot resolve to a moment the second read calls past
+	now := time.Now()
+	upd, errMessage, err := s.buildUpdate(r.Context(), fields, current, now)
 	if err != nil {
 		s.log.Error("patch: build update", "error", err)
 		writeError(w, http.StatusInternalServerError, "")
@@ -56,7 +59,7 @@ func (s *Server) handlePatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rem, err := s.store.UpdateReminder(r.Context(), current, upd, time.Now().Unix())
+	rem, err := s.store.UpdateReminder(r.Context(), current, upd, now.Unix())
 	if errors.Is(err, sql.ErrNoRows) {
 		// deleted between our read and the update — §8.3's unknown-{id} 404,
 		// not a 500
@@ -75,12 +78,15 @@ func (s *Server) handlePatch(w http.ResponseWriter, r *http.Request) {
 // buildUpdate consumes the known keys from fields and rejects what is
 // left, naming the lexically first leftover — Go randomises map
 // iteration, so "the first one" is chosen, not taken (§8.3).
-func (s *Server) buildUpdate(ctx context.Context, fields map[string]json.RawMessage, current store.Reminder) (store.ReminderUpdate, string, error) {
+func (s *Server) buildUpdate(ctx context.Context, fields map[string]json.RawMessage, current store.Reminder, now time.Time) (store.ReminderUpdate, string, error) {
 	var upd store.ReminderUpdate
 
 	if raw, present := consume(fields, "text"); present {
 		var text *string
-		if err := json.Unmarshal(raw, &text); err != nil || text == nil {
+		if err := json.Unmarshal(raw, &text); err != nil {
+			return upd, "text must be a string", nil
+		}
+		if text == nil {
 			return upd, "text cannot be cleared", nil
 		}
 		trimmed, errMessage := validateText(*text)
@@ -109,7 +115,7 @@ func (s *Server) buildUpdate(ctx context.Context, fields map[string]json.RawMess
 		}
 		// re-time: an offset preset resolves from now, never from the old
 		// due_at (§4.1)
-		due, errMessage := s.resolveDueAt(preset, dueAt, time.Now())
+		due, errMessage := s.resolveDueAt(preset, dueAt, now)
 		if errMessage != "" {
 			return upd, errMessage, nil
 		}
@@ -141,7 +147,7 @@ func (s *Server) buildUpdate(ctx context.Context, fields map[string]json.RawMess
 			leftover = append(leftover, key)
 		}
 		slices.Sort(leftover)
-		return upd, fmt.Sprintf("unknown field %q", leftover[0]), nil
+		return upd, unknownFieldMessage(leftover[0]), nil
 	}
 	return upd, "", nil
 }

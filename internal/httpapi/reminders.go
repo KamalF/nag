@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/KamalF/nag/internal/config"
 	"github.com/KamalF/nag/internal/presets"
@@ -67,10 +66,8 @@ func (s *Server) handleCreateReminder(w http.ResponseWriter, r *http.Request) {
 		DueAt         *int64   `json:"due_at"`
 		ExtraChannels []string `json:"extra_channels"`
 	}
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "malformed json body")
+	if errMessage := decodeBody(r, &body); errMessage != "" {
+		writeError(w, http.StatusBadRequest, errMessage)
 		return
 	}
 	if body.Text == nil {
@@ -212,9 +209,10 @@ func (s *Server) findPreset(key string) (config.Preset, bool) {
 }
 
 // validateText applies §8.3: trimmed, non-empty after trimming, max 1000
-// bytes, valid UTF-8, no control characters (newlines included — the
+// bytes, no control characters (newlines included — the
 // capture control is a single-line input). Returns the trimmed text or a
-// message naming the character class, not the byte.
+// message naming the character class, not the byte. UTF-8 validity is
+// decodeBody's, since only the raw bytes can still show it.
 func validateText(raw string) (text, errMessage string) {
 	text = strings.TrimSpace(raw)
 	if text == "" {
@@ -223,11 +221,9 @@ func validateText(raw string) (text, errMessage string) {
 	if len(text) > 1000 {
 		return "", fmt.Sprintf("text is %d bytes, maximum is 1000", len(text))
 	}
-	if !utf8.ValidString(text) {
-		return "", "text is not valid utf-8"
-	}
 	for _, r := range text {
-		if unicode.IsControl(r) {
+		// U+2028/2029 are line breaks too, without being category Cc
+		if unicode.IsControl(r) || unicode.In(r, unicode.Zl, unicode.Zp) {
 			return "", "text must not contain control characters, newlines included"
 		}
 	}

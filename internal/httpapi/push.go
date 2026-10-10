@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -25,10 +24,8 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 		} `json:"keys"`
 		ApplicationServerKey string `json:"application_server_key"`
 	}
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "malformed json body")
+	if errMessage := decodeBody(r, &body); errMessage != "" {
+		writeError(w, http.StatusBadRequest, errMessage)
 		return
 	}
 	if msg := endpointError(body.Endpoint); msg != "" {
@@ -72,10 +69,8 @@ func (s *Server) handleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Endpoint string `json:"endpoint"`
 	}
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "malformed json body")
+	if errMessage := decodeBody(r, &body); errMessage != "" {
+		writeError(w, http.StatusBadRequest, errMessage)
 		return
 	}
 	if err := s.store.DeleteSubscription(r.Context(), body.Endpoint); err != nil {

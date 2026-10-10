@@ -29,6 +29,8 @@ func TestPatchValidation(t *testing.T) {
 		{"empty object", `{}`, []string{"nothing to change"}},
 		{"text null", `{"text":null}`, []string{"text", "cleared"}},
 		{"text empty", `{"text":""}`, []string{"text"}},
+		{"text not a string", `{"text":5}`, []string{"text must be a string"}},
+		{"text lone surrogate", `{"text":"a\ud800"}`, []string{"utf-8"}},
 		{"both timing fields", fmt.Sprintf(`{"preset":"30min","due_at":%d}`, time.Now().Unix()+60),
 			[]string{"not both"}},
 		{"unknown field names the lexically first", `{"zzz":1,"aaa":1,"text":"ok"}`,
