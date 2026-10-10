@@ -25,6 +25,10 @@
          component (§9.2) -->
     <section id="capture" class="capture" hidden></section>
 
+    <!-- §9.2: two consecutive poll failures; clears itself on the next
+         success -->
+    <p id="offline" class="offline" hidden></p>
+
     <!-- §9.2: absent entirely when push is working, which is its steady
          state. It is above the lists because it is the one thing whose
          absence you cannot notice. -->
@@ -51,6 +55,9 @@
 
   <!-- §9.6: the picker sheet, outside <main> so the page behind it can be
        made inert while it is up. Nothing is written until Set reminder. -->
+  <!-- one region for errors and the undo offer, so both are announced -->
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
   <div id="scrim" class="scrim"></div>
   <div id="sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="summary">
     <div class="grab"></div>

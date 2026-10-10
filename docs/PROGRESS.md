@@ -74,8 +74,8 @@ claim going out as `mailto:mailto:…`.
 | [x] | 34 | Inline row editor | `2238ea5` |
 | [x] | 35 | Markdown link rendering (client) | `5c0cf13` |
 | [x] | 36 | Picker sheet | `dac3e93` |
-| [x] | 37 | Channel selector | |
-| [ ] | 38 | Toasts, undo, failure states | |
+| [x] | 37 | Channel selector | `8270579` |
+| [x] | 38 | Toasts, undo, failure states | |
 | [ ] | 39 | **M3 checkpoint** (no commit) | |
 
 ## M4 — ship

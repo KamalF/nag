@@ -14,6 +14,14 @@ const VISIBLE_POLL_MS = 45000;
 const HIDDEN_POLL_MS = 300000;
 const FLASH_MS = 2400;
 
+// §9.2's toasts: the undo offer lasts five seconds; an error stays a little
+// longer, since someone has to read it.
+const UNDO_MS = 5000;
+const ERROR_TOAST_MS = 7000;
+
+// A failed poll is not a toast: the line appears after this many in a row.
+const OFFLINE_AFTER_FAILURES = 2;
+
 // How long a click's request waits for the render that shows its row. It is
 // not the highlight's own duration: the row may take several passes to
 // arrive, and a highlight that had already expired by then would make a slow
@@ -31,7 +39,6 @@ const MAX_TIMER_MS = 2000000000;
 // from a constant for the same class of reason — reading document.title
 // would compound the prefix into "(3) (2) Nag" on the second call.
 const BADGE_FILL = '#E0A33E';
-const FLASH_FILL = '#E0A33E';
 const BADGE_INK = '#212A2E';
 const BASE_TITLE = 'Nag';
 const PLAIN_FAVICON = '/icons/32.png';
@@ -122,7 +129,7 @@ async function init() {
     if (!chRes.ok) throw new Error('channels ' + chRes.status);
     channels = await chRes.json();
   } catch {
-    // a boot that fails must retry, not brick — full toasts are M3
+    // a boot that fails must retry, not brick: there is no list yet to keep
     setTimeout(init, VISIBLE_POLL_MS);
     return;
   }
@@ -185,18 +192,14 @@ function showLogin() {
 }
 
 async function submitToken() {
-  const res = await fetch('/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token: $('token').value }),
-  });
-  if (res.status === 204) {
+  const result = await request('/login', 'POST', { token: $('token').value }, { reloadOn401: false });
+  if (result.ok) {
     // the whole of the post-login path: a reload re-runs init under the
     // new cookie (§8.1)
     location.reload();
     return;
   }
-  $('login-error').textContent = (await res.json()).error;
+  $('login-error').textContent = result.error ?? 'wrong token';
 }
 
 // --- the bar: capture and row editor (§9.2) ---
@@ -235,11 +238,24 @@ function createBar({ value = '', placeholder = '', label, onTime, onEnter, pickF
     // included — an editor always sends it, never omitting the key (§9.2)
     selectedChannels: () => selector?.selected() ?? [],
     resetChannels: () => selector?.reset(),
-    // every chip is disabled while the input is empty or whitespace-only:
-    // a chip that visibly isn't ready beats a toast saying so (§9.2)
+    // every chip is disabled while the input is empty or whitespace-only —
+    // a chip that visibly isn't ready beats a toast saying so — and while a
+    // save is in flight, so a double-tap cannot create two reminders (§9.2)
+    busy: false,
     updateEnabled() {
-      const empty = bar.text() === '';
-      for (const b of chips.children) b.disabled = empty;
+      const off = bar.busy || bar.text() === '';
+      for (const b of chips.children) b.disabled = off;
+    },
+    async submit(save) {
+      if (bar.busy) return false;
+      bar.busy = true;
+      bar.updateEnabled();
+      try {
+        return await save();
+      } finally {
+        bar.busy = false;
+        bar.updateEnabled();
+      }
     },
     redrawChips() {
       chips.replaceChildren();
@@ -248,7 +264,7 @@ function createBar({ value = '', placeholder = '', label, onTime, onEnter, pickF
         b.type = 'button';
         b.className = 'chip';
         b.textContent = p.label;
-        b.addEventListener('click', () => onTime({ preset: p.key }));
+        b.addEventListener('click', () => bar.submit(() => onTime({ preset: p.key })));
         chips.append(b);
       }
       // "Pick a time" is not a preset (§5.4): the client renders it after
@@ -258,7 +274,7 @@ function createBar({ value = '', placeholder = '', label, onTime, onEnter, pickF
       pick.className = 'chip';
       pick.textContent = 'Pick a time';
       pick.addEventListener('click', () =>
-        openPicker({ opener: pick, from: pickFrom?.(), onSet: (dueAt) => onTime({ due_at: dueAt }) }));
+        openPicker({ opener: pick, from: pickFrom?.(), onSet: (dueAt) => bar.submit(() => onTime({ due_at: dueAt })) }));
       chips.append(pick);
       bar.updateEnabled();
     },
@@ -268,7 +284,7 @@ function createBar({ value = '', placeholder = '', label, onTime, onEnter, pickF
     // isComposing: Enter that commits an IME composition is not a save
     if (e.key !== 'Enter' || e.isComposing) return;
     e.preventDefault();
-    if (bar.text() !== '') onEnter();
+    if (bar.text() !== '') bar.submit(onEnter);
   });
   bar.redrawChips();
   return bar;
@@ -370,16 +386,14 @@ function buildCapture() {
 async function createReminder(timing) {
   const text = capture.text();
   if (text === '') return false;
-  const res = await fetch('/api/reminders', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, extra_channels: capture.selectedChannels(), ...timing }),
-  });
-  if (res.status !== 201) return false;
+  const result = await userAction('/api/reminders', 'POST',
+    { text, extra_channels: capture.selectedChannels(), ...timing });
+  // a save that fails leaves what you typed exactly where it is, next to
+  // its toast (§9.2)
+  if (!result.ok) return false;
   capture.input.value = '';
   capture.updateEnabled();
   capture.resetChannels();
-  refreshState(); // every successful mutation refetches (§8.2)
   return true;
 }
 
@@ -439,14 +453,10 @@ function closeEditor() {
 async function saveEdit(row, bar, timing) {
   const text = bar.text();
   if (text === '') return false;
-  const res = await fetch('/api/reminders/' + row.id, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, extra_channels: bar.selectedChannels(), ...timing }),
-  });
-  if (!res.ok) return false;
+  const result = await userAction('/api/reminders/' + row.id, 'PATCH',
+    { text, extra_channels: bar.selectedChannels(), ...timing });
+  if (!result.ok) return false;
   if (editor?.row === row) closeEditor();
-  refreshState();
   return true;
 }
 
@@ -976,7 +986,10 @@ async function refreshState() {
       headers: stateETag ? { 'If-None-Match': stateETag } : {},
     });
   } catch {
-    return; // aborted by a newer request, or offline: the next trigger tries again
+    // aborted by a newer request — which counts for nothing — or offline,
+    // which the next trigger retries
+    if (controller === stateAbort) pollFailed();
+    return;
   }
   if (controller !== stateAbort) return;
   if (res.status === 401) {
@@ -984,6 +997,7 @@ async function refreshState() {
     return;
   }
   if (res.status === 304) {
+    pollSucceeded();
     // The ETag excludes server_time so the steady-state poll is cheap (§8.2),
     // which makes this the common case: no body, while every time string on
     // screen has nevertheless moved. Returning early here would freeze them
@@ -992,7 +1006,10 @@ async function refreshState() {
     if (lastState) renderState(lastState);
     return;
   }
-  if (!res.ok) return;
+  if (!res.ok) {
+    pollFailed();
+    return;
+  }
 
   let body;
   try {
@@ -1006,6 +1023,7 @@ async function refreshState() {
     return;
   }
   if (controller !== stateAbort) return;
+  pollSucceeded();
   stateETag = res.headers.get('ETag');
   lastState = body;
   syncClock(res, body);
@@ -1055,6 +1073,7 @@ function armDueTimer(state) {
 }
 
 function renderState(state) {
+  if (state.config_version !== config.config_version) reloadWhenQuiet();
   $('overdue-count').textContent = state.overdue_count;
   renderLists(state);
   // a zone heading is hidden entirely when its list is empty, and the empty
@@ -1287,16 +1306,16 @@ function clearFlash() {
   clearTimeout(flashTimer);
   pendingFlash = null;
   if (litRow === null) return;
-  const row = rowElement(litRow);
-  if (row) row.style.backgroundColor = '';
+  rowElement(litRow)?.classList.remove('pinged');
   litRow = null;
 }
 
-// CSSOM rather than a style attribute, which style-src 'self' forbids and
-// §9.7 makes a rule; M3 replaces the provisional colour with the token
-// (commit 38).
+// The flash is a class toggle with its values in app.css (§9.7). Removing
+// and re-adding restarts the animation when the same row is asked for again.
 function paintFlash(row) {
-  row.style.backgroundColor = FLASH_FILL;
+  row.classList.remove('pinged');
+  void row.offsetWidth;
+  row.classList.add('pinged');
 }
 
 function rowElement(id) {
@@ -1436,7 +1455,7 @@ function createRow(id) {
 // row waiting for next Monday would quietly pull it forward by six days.
 function rowActions(row) {
   const path = '/api/reminders/' + row.id;
-  const actions = [actionButton('Clear', row.late, () => mutate(path + '/done', 'POST'))];
+  const actions = [actionButton('Clear', row.late, () => clearRow(row))];
   // the row text cannot be a <button> — it contains anchors (§9.10) — so
   // pointer users click the text and the keyboard gets a real button
   const edit = actionButton('Edit', false, () => openEditor(row));
@@ -1445,32 +1464,174 @@ function rowActions(row) {
   if (row.late) {
     for (const p of config.presets) {
       if (!p.quick) continue;
-      actions.push(actionButton(p.label, false, () => mutate(path, 'PATCH', { preset: p.key })));
+      actions.push(actionButton(p.label, false, () => userAction(path, 'PATCH', { preset: p.key })));
     }
   }
   return actions;
 }
 
+// actionButton disables itself while its request is in flight, so a
+// double-tap cannot send the action twice (§9.2).
 function actionButton(label, primary, onClick) {
   const b = document.createElement('button');
   b.type = 'button';
   b.className = primary ? 'act pri' : 'act';
   b.textContent = label;
-  b.addEventListener('click', onClick);
+  b.addEventListener('click', async () => {
+    if (b.disabled) return;
+    b.disabled = true;
+    try {
+      await onClick();
+    } finally {
+      b.disabled = false;
+    }
+  });
   return b;
 }
 
-// mutate sends one row action and follows it with a /api/state fetch: the
-// response makes the row correct, the refetch makes the badge, the title and
-// the zone split correct (§8.2).
-async function mutate(path, method, body) {
+// --- requests and failures (§9.2) ---
+
+// request is every call a person waits for: it never throws, and it says
+// what went wrong in the server's own words (§8.3), or in ours when there
+// was no answer at all. On /api/* a 401 means the cookie expired under a
+// pinned tab: the reload lands on the token field. /login is the one caller
+// whose 401 is an ordinary answer, a wrong token.
+async function request(path, method, body, { reloadOn401 = true } = {}) {
   const init = { method };
   if (body !== undefined) {
     init.headers = { 'Content-Type': 'application/json' };
     init.body = JSON.stringify(body);
   }
-  await fetch(path, init);
-  refreshState();
+  let res;
+  try {
+    res = await fetch(path, init);
+  } catch {
+    return { ok: false, status: 0, error: 'could not reach the server — check the connection and try again' };
+  }
+  if (res.status === 401 && reloadOn401) {
+    location.reload();
+    return { ok: false, status: 401, error: null };
+  }
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    // a 204, or a proxy's HTML error page
+  }
+  if (res.ok) return { ok: true, status: res.status, data };
+  return { ok: false, status: res.status, error: data?.error ?? `request failed (${res.status})` };
+}
+
+// userAction is request plus §9.2's failure rules: a failed action is a
+// toast at once, and every success is followed by a /api/state fetch — the
+// response makes the row right, the refetch makes the badge, the title and
+// the zone split right (§8.2).
+async function userAction(path, method, body) {
+  const result = await request(path, method, body);
+  if (result.ok) {
+    refreshState();
+  } else if (isUnknownPreset(result)) {
+    await repairPresets();
+  } else if (result.error) {
+    toast(result.error);
+  }
+  return result;
+}
+
+// A 400 naming an unknown preset means this client holds a config the
+// server has since reloaded (§5.5). It is the one error the user cannot act
+// on and the app can fix itself: refetch /api/config and redraw the chip
+// rows in place — the capture bar's and an open editor's — keeping typed
+// text, the open editor and the picker's pending value. The full reload
+// stays governed by the quiet-moment rule, which these very states hold.
+function isUnknownPreset(result) {
+  return result.status === 400 && result.error?.startsWith('unknown preset ');
+}
+
+async function repairPresets() {
+  const result = await request('/api/config', 'GET');
+  if (!result.ok) {
+    if (result.error) toast(result.error);
+    return;
+  }
+  config = result.data;
+  capture.redrawChips();
+  editor?.bar.redrawChips();
+  for (const row of rows.values()) {
+    if (row.late && !row.editing) row.acts.replaceChildren(...rowActions(row));
+  }
+  toast('The preset list changed on the server — the chips are current now, pick again.');
+}
+
+// clearRow is the one optimistic path: Clear shows a 5-second undo toast
+// that calls /undone. There are no confirm dialogs anywhere.
+async function clearRow(row) {
+  const result = await userAction('/api/reminders/' + row.id + '/done', 'POST');
+  if (!result.ok) return;
+  toast('Cleared.', {
+    action: 'Undo',
+    ms: UNDO_MS,
+    onAction: () => userAction('/api/reminders/' + row.id + '/undone', 'POST'),
+  });
+}
+
+// toast writes into the one aria-live region, so errors and the undo offer
+// are both announced. The Undo is a real button reachable by Tab; there is
+// deliberately no undo shortcut (§9.2).
+function toast(message, { action, onAction, ms = ERROR_TOAST_MS } = {}) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  const text = document.createElement('span');
+  text.textContent = message;
+  el.append(text);
+  const dismiss = () => el.remove();
+  if (action) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'act pri';
+    b.textContent = action;
+    b.addEventListener('click', () => {
+      dismiss();
+      onAction();
+    });
+    el.append(b);
+  }
+  $('toasts').append(el);
+  setTimeout(dismiss, ms);
+}
+
+// The poll's failures are counted, never toasted: a toast every 45 seconds
+// for the length of a network blip, on a tab nobody is looking at, is
+// noise. After two in a row one quiet line appears under the capture bar,
+// naming when the list was last good; the list and the badge are kept
+// as they were — stale but labelled beats empty.
+let pollFailures = 0;
+let lastPollOk = performance.now();
+
+function pollFailed() {
+  pollFailures++;
+  if (pollFailures < OFFLINE_AFTER_FAILURES) return;
+  const minutes = Math.floor((performance.now() - lastPollOk) / 60000);
+  const ago = minutes < 1 ? 'less than a minute ago'
+    : minutes < 60 ? minutes + (minutes === 1 ? ' minute ago' : ' minutes ago')
+    : Math.floor(minutes / 60) + ' h ago';
+  $('offline').textContent = 'Not connected — last updated ' + ago;
+  $('offline').hidden = false;
+}
+
+function pollSucceeded() {
+  pollFailures = 0;
+  lastPollOk = performance.now();
+  $('offline').hidden = true;
+}
+
+// reloadWhenQuiet is §5.5's "any difference means reload", held for a quiet
+// moment: reloading mid-sentence would discard what is typed in the capture
+// bar, an open editor, or a half-chosen picker. The poll that finds all
+// three idle takes it.
+function reloadWhenQuiet() {
+  if (capture.input.value !== '' || editor || picker) return;
+  location.reload();
 }
 
 init();

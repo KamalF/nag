@@ -119,6 +119,20 @@ button:not(:disabled):active { transform: scale(.96); }
 .chip.channel.muted { opacity: .55; }
 .chip.channel.muted[aria-pressed="true"] { background: var(--chip-ink); color: var(--surface); }
 
+/* ---- failure states (§9.2) ---- */
+.offline { margin: 0; padding: 0 var(--pad) 14px; font-size: 13px; color: var(--ink-quiet); }
+.toasts {
+  position: fixed; left: 0; right: 0; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 30;
+  display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none;
+}
+.toast {
+  pointer-events: auto; display: flex; align-items: center; gap: 14px;
+  max-width: min(520px, calc(100% - 32px)); padding: 10px 12px 10px 16px; border-radius: 12px;
+  background: var(--ink); color: var(--surface); font-size: 14px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.25);
+}
+.toast .act.pri { border-color: var(--surface); color: var(--surface); }
+
 /* ---- notification slot ---- */
 .slot { padding: 0 var(--pad) 14px; }
 .slot p { margin: 0; font-size: 13.5px; color: var(--ink-quiet); }
@@ -162,6 +176,18 @@ button:not(:disabled):active { transform: scale(.96); }
 .row .txt a {
   color: var(--ink); cursor: pointer;
   text-decoration: underline; text-decoration-color: var(--ink-faint); text-underline-offset: 2px;
+}
+
+/* a clicked notification's row: scrolled into view and flashed (§9.5) */
+.row.pinged { animation: flash 2.4s ease-out 1; }
+@keyframes flash {
+  0%, 30% { background: color-mix(in srgb, var(--late) 22%, var(--surface-lift)); }
+  100% { background: var(--surface-lift); }
+}
+.row.later.pinged { animation-name: flash-later; }
+@keyframes flash-later {
+  0%, 30% { background: color-mix(in srgb, var(--late) 22%, var(--surface)); }
+  100% { background: transparent; }
 }
 
 /* the editor is the capture bar inside the row; the row's own time stays
@@ -293,4 +319,6 @@ button:not(:disabled):active { transform: scale(.96); }
 
 @media (prefers-reduced-motion: reduce) {
   .row .acts { transition: none; }
+  /* still highlighted for its 2.4 s, just without the fade */
+  .row.pinged { animation: none; background: color-mix(in srgb, var(--late) 22%, var(--surface-lift)); }
 }
