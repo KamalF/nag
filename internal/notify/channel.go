@@ -31,8 +31,18 @@ func newRouter(opts types.SenderOptions) *router.ServiceRouter {
 // URL goes through shoutrrr's router exactly as a send would build it, so a
 // typo is refused at the prompt rather than stored and found weeks later
 // as a delivery_error.
-func ValidateChannelURL(rawURL string) error {
-	_, err := newRouter(types.SenderOptions{}).Locate(rawURL)
+//
+// shoutrrr v0.21.2's router panics on some malformed custom URLs (a generic
+// one whose query does not parse: it formats the nil URL it got back with
+// the error), so the panic is turned into the refusal it should have been.
+// Its value is not kept: it may hold a part of the URL.
+func ValidateChannelURL(rawURL string) (err error) {
+	defer func() {
+		if recover() != nil {
+			err = errors.New("the URL could not be parsed")
+		}
+	}()
+	_, err = newRouter(types.SenderOptions{}).Locate(rawURL)
 	return err
 }
 
@@ -49,9 +59,9 @@ func ValidateChannelURL(rawURL string) error {
 // "attempted, did not complete", whether a deadline or a shutdown ended it.
 //
 // §7.2 expects the abandoned goroutine to end on its own client's timeout.
-// Most v0.21.2 services do bound themselves, but not all: pushbullet,
-// opsgenie, notifiarr and generic fall back to a bare http.Client (generic
-// gets a timed one injected, below). So the leak is bounded here, whatever
+// Most v0.21.2 services do bound themselves, but not all: pushbullet sends
+// with context.Background() on a bare http.Client, and generic would too
+// without the timed client injected below. So the leak is bounded here, whatever
 // the service does: while an earlier send to the same URL is still running
 // — and has run for less than busyFor — no new one starts, and the verdict
 // is NotAttempted. Nothing was attempted, so nothing is recorded for it
@@ -59,9 +69,10 @@ func ValidateChannelURL(rawURL string) error {
 // one goroutine per busyFor, not one per reminder, and the channel is
 // tried again after that rather than muted for good.
 //
-// A service offering SendContext gets the context too — in v0.21.2, smtp
-// and xmpp; smtp turns the context's deadline into one on its connection,
-// so an abandoned smtp send now ends on its own.
+// A service with a context-aware send gets the context too, so the
+// deadline and a shutdown reach the socket: in v0.21.2, smtp and xmpp
+// through types.ContextSender, and matrix, zulip and pagerduty through
+// their own SendWithContext.
 func SendChannel(ctx context.Context, rawURL, message string) string {
 	slot := &sendSlot{started: time.Now()}
 	if prev, busy := inFlight.LoadOrStore(rawURL, slot); busy {
@@ -100,9 +111,15 @@ func SendChannel(ctx context.Context, rawURL, message string) string {
 const NotAttempted = "not attempted"
 
 // busyFor is how long a running send keeps new ones to its URL from
-// starting: past every client timeout a v0.21.2 service sets (30 s is the
-// longest), so only a send that will never end on its own is ever taken
-// over.
+// starting: about one sweep tick. Kept short on purpose — a channel inside
+// the window is skipped silently, its rows record nothing and are never
+// sent again (§7.2: fan-out must never block), so a long window would hide
+// every failure but the first. Past it a new send starts beside the old:
+// a different reminder, never the same message twice, and one extra
+// goroutine per window while the old send runs on. Some sends do run on —
+// discord retries on its own clock for five minutes and more — so a hung
+// channel holds at most one goroutine per busyFor for that long, and
+// pushbullet's, which never ends, one per busyFor until the host closes.
 var busyFor = 3 * ChannelSendTimeout
 
 type sendSlot struct{ started time.Time }
@@ -137,10 +154,19 @@ func sendOnce(ctx context.Context, rawURL, message string) error {
 	if err != nil {
 		return err
 	}
-	if cs, ok := service.(types.ContextSender); ok {
-		return cs.SendContext(ctx, message, nil)
+	switch s := service.(type) {
+	case types.ContextSender:
+		return s.SendContext(ctx, message, nil)
+	case sendWithContext:
+		return s.SendWithContext(ctx, message, nil)
 	}
 	return service.Send(message, nil)
+}
+
+// sendWithContext is the context-aware send matrix, zulip and pagerduty
+// export under their own name, outside types.ContextSender.
+type sendWithContext interface {
+	SendWithContext(ctx context.Context, message string, params *types.Params) error
 }
 
 // classifyChannelError reads the error's type and never its text (§4.1). A

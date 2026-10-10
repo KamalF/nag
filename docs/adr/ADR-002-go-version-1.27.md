@@ -28,10 +28,13 @@ image.
 
 ## Consequences
 
-- An abandoned smtp send now ends on its own; the one-send-per-channel cap in
-  `internal/notify/channel.go` stays, because pushbullet, opsgenie, notifiarr and generic
-  still fall back to an untimed client in v0.21.2.
-- Contributors need Go ≥ 1.27, a stricter floor than the code itself requires.
+- An abandoned smtp send now ends on its own. The one-send-per-channel cap in
+  `internal/notify/channel.go` stays: pushbullet still sends with `context.Background()` on
+  an untimed client and can hang for good. (opsgenie and notifiarr time out each request
+  themselves; generic is bounded by the client nag injects.) The cap is also the guarantee
+  for any service a later version gets wrong.
+- Contributors need Go ≥ 1.27. Unlike ADR-001's floor this one is not a choice: shoutrrr
+  v0.21.2 itself declares `go 1.27`, so lowering it means going back to shoutrrr v0.18.0.
 - `encoding/json` runs on the json/v2 engine in 1.27, and its error text may differ;
   `decodeBody` reads that text to name an unknown field, so a test pins the message.
 - Every shoutrrr bump means re-auditing `channel.go`'s assumptions about how each service

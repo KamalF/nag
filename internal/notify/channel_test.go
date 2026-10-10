@@ -114,6 +114,10 @@ func TestValidateChannelURL(t *testing.T) {
 	if err := ValidateChannelURL("nosuchservice://x"); err == nil {
 		t.Error("unknown service accepted")
 	}
+	// the library panics on this one; it must come back as a refusal
+	if err := ValidateChannelURL("generic+https://host/hook?disabletls=maybe"); err == nil {
+		t.Error("generic URL with an unparseable query accepted")
+	}
 }
 
 // An abandoned send must still end on its own (§7.2): a generic webhook
@@ -156,7 +160,7 @@ func TestNtfyKeepsItsTLSOptions(t *testing.T) {
 	}
 }
 
-// However a service hangs — smtp has no deadline after its dial — a send
+// However a service hangs — pushbullet has no deadline at all — a send
 // still running keeps new ones to its URL from starting: they are
 // NotAttempted, so a hung host costs one goroutine, not one per reminder.
 // Past busyFor the slot is taken over, so the channel is never muted for

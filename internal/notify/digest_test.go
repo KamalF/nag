@@ -68,9 +68,9 @@ func (f *fixture) tickAt(offset int64) {
 }
 
 // create writes a reminder due at t0+offset, as if written well before it.
-func (f *fixture) create(text string, offset int64) store.Reminder {
+func (f *fixture) create(text string, offset int64, channels ...string) store.Reminder {
 	f.t.Helper()
-	r, err := f.st.CreateReminder(f.t.Context(), text, t0+offset, nil, t0-3600)
+	r, err := f.st.CreateReminder(f.t.Context(), text, t0+offset, channels, t0-3600)
 	if err != nil {
 		f.t.Fatal(err)
 	}

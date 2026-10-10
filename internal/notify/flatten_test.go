@@ -1,9 +1,10 @@
 package notify
 
 import (
-	"os"
 	"regexp"
 	"testing"
+
+	"github.com/KamalF/nag/web"
 )
 
 // The §9.10 case table, every row. Whatever renders as literal text
@@ -46,7 +47,7 @@ func TestFlattenLinks(t *testing.T) {
 // must be the one regex. The JS literal is read from the file the binary
 // embeds, so a drift on either side fails here.
 func TestClientLinkRegexMatchesFlattenLinks(t *testing.T) {
-	raw, err := os.ReadFile("../../web/app.js")
+	raw, err := web.Files.ReadFile("app.js")
 	if err != nil {
 		t.Fatal(err)
 	}

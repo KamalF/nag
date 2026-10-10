@@ -14,6 +14,10 @@ type MarkedRow struct {
 	Text          string
 	DueAt         int64
 	ExtraChannels []string
+
+	// channelsAsRead is extra_channels exactly as this SELECT saw it, so the
+	// verdict write can tell whether the list was edited meanwhile.
+	channelsAsRead *string
 }
 
 // SweepMark is §7.3 phase 1, one transaction, writes only: select up to 50
@@ -45,6 +49,7 @@ func (s *Store) SweepMark(ctx context.Context, now, tooLateAfter int64) (eligibl
 			rows.Close()
 			return nil, nil, err
 		}
+		r.channelsAsRead = channels
 		if channels != nil {
 			if r.ExtraChannels, err = decodeChannels(r.ID, *channels); err != nil {
 				rows.Close()
@@ -174,12 +179,17 @@ func stampByID(ctx context.Context, tx *sql.Tx, column string, now int64, ids []
 
 // SetDeliveryError writes one row's fan-out verdict as soon as its attempts
 // finish (§7.2): the classified string, or nil to clear it after a fully
-// successful fan-out. It only lands on the row as phase 1 marked it — a
-// row re-timed or re-marked since has had its delivery_error cleared by
-// that write (§4.1), and this tick's verdict must not resurrect it.
-func (s *Store) SetDeliveryError(ctx context.Context, id, markedAt int64, value *string) error {
+// successful fan-out. It only lands on the row as phase 1 marked it: a row
+// re-timed since, or whose channel list was edited since, has had its
+// delivery_error cleared by that write (§4.1), and this tick's verdict —
+// naming channels the row may no longer carry — must not resurrect it. The
+// due_at check catches the re-time notified_at alone cannot: one into the
+// past in the same second, which stamps notified_at with that same now.
+func (s *Store) SetDeliveryError(ctx context.Context, row MarkedRow, markedAt int64, value *string) error {
 	_, err := s.db.ExecContext(ctx,
-		"UPDATE reminders SET delivery_error = ? WHERE id = ? AND notified_at = ?", value, id, markedAt)
+		`UPDATE reminders SET delivery_error = ?
+		 WHERE id = ? AND notified_at = ? AND due_at = ? AND extra_channels IS ?`,
+		value, row.ID, markedAt, row.DueAt, row.channelsAsRead)
 	return err
 }
 

@@ -53,15 +53,6 @@ func withChannels(t *testing.T, f *fixture, names ...string) *fakeChannels {
 	return fc
 }
 
-func (f *fixture) createWith(text string, offset int64, channels ...string) store.Reminder {
-	f.t.Helper()
-	r, err := f.st.CreateReminder(f.t.Context(), text, t0+offset, channels, t0-3600)
-	if err != nil {
-		f.t.Fatal(err)
-	}
-	return r
-}
-
 func (f *fixture) deliveryError(id int64) *string {
 	f.t.Helper()
 	r, err := f.st.GetReminder(f.t.Context(), id)
@@ -75,7 +66,7 @@ func (f *fixture) deliveryError(id int64) *string {
 func TestFanOutSendsTheFlattenedText(t *testing.T) {
 	f := newFixture(t)
 	fc := withChannels(t, f, "ntfy", "tg")
-	f.createWith("Renew [the domain](https://reg.example/x)", 0, "ntfy", "tg")
+	f.create("Renew [the domain](https://reg.example/x)", 0, "ntfy", "tg")
 
 	f.tickAt(10)
 
@@ -89,7 +80,7 @@ func TestFanOutSendsTheFlattenedText(t *testing.T) {
 func TestFanOutSkipsRowsPastTheGate(t *testing.T) {
 	f := newFixture(t)
 	fc := withChannels(t, f, "ntfy")
-	f.createWith("late", -31*60, "ntfy")
+	f.create("late", -31*60, "ntfy")
 
 	f.tickAt(0)
 
@@ -107,7 +98,7 @@ func TestFanOutIsNotHeldByTheCooldown(t *testing.T) {
 	f.tickAt(0) // consumes the window
 	f.sender.payloads = nil
 
-	f.createWith("second", 7*60, "ntfy")
+	f.create("second", 7*60, "ntfy")
 	f.tickAt(7*60 + 10)
 
 	f.noPush()
@@ -124,7 +115,7 @@ func TestFanOutDisabledAndOrphan(t *testing.T) {
 	if err := f.st.SetChannelEnabled(t.Context(), "muted", false); err != nil {
 		t.Fatal(err)
 	}
-	r := f.createWith("x", 0, "gone", "muted")
+	r := f.create("x", 0, "gone", "muted")
 
 	f.tickAt(10)
 
@@ -151,7 +142,7 @@ func TestFanOutDeliveryError(t *testing.T) {
 	for _, n := range []string{"a", "b", "c", "d"} {
 		fc.verdicts["url://"+n] = "http 401"
 	}
-	r := f.createWith("x", 0, "a", "b", "c", "d", "e")
+	r := f.create("x", 0, "a", "b", "c", "d", "e")
 
 	f.tickAt(10)
 
@@ -190,9 +181,9 @@ func TestFanOutDeadlineDropsRemainingRows(t *testing.T) {
 	fc := withChannels(t, f, "dead")
 	fc.hang["url://dead"] = true
 	f.sweep.budget = 150 * time.Millisecond
-	first := f.createWith("one", 0, "dead")
-	second := f.createWith("two", 1, "dead")
-	third := f.createWith("three", 2, "dead")
+	first := f.create("one", 0, "dead")
+	second := f.create("two", 1, "dead")
+	third := f.create("three", 2, "dead")
 
 	start := time.Now()
 	f.tickAt(10)
@@ -237,7 +228,7 @@ func TestFanOutDeadlineBoundsARowOfDeadChannels(t *testing.T) {
 		fc.hang["url://"+n] = true
 	}
 	f.sweep.budget = 150 * time.Millisecond
-	r := f.createWith("x", 0, names...)
+	r := f.create("x", 0, names...)
 
 	start := time.Now()
 	f.tickAt(10)
@@ -260,7 +251,7 @@ func TestFanOutBudgetStartsWithThePhase(t *testing.T) {
 	fc := withChannels(t, f, "ntfy")
 	f.sweep.budget = 150 * time.Millisecond
 	f.sweep.sender = slowPusher{delay: 300 * time.Millisecond}
-	f.createWith("x", 0, "ntfy")
+	f.create("x", 0, "ntfy")
 
 	f.tickAt(10)
 
@@ -298,8 +289,8 @@ func TestShutdownMidFanOut(t *testing.T) {
 	f := newFixture(t)
 	fc := withChannels(t, f, "dead")
 	fc.hang["url://dead"] = true
-	f.createWith("one", 0, "dead")
-	f.createWith("two", 1, "dead")
+	f.create("one", 0, "dead")
+	f.create("two", 1, "dead")
 
 	ctx, cancel := context.WithCancel(t.Context())
 	f.clock = t0 + 10
@@ -327,7 +318,7 @@ func TestFanOutSkipsABusyChannel(t *testing.T) {
 	f := newFixture(t)
 	fc := withChannels(t, f, "mail", "ntfy")
 	fc.verdicts["url://mail"] = NotAttempted
-	r := f.createWith("x", 0, "mail", "ntfy")
+	r := f.create("x", 0, "mail", "ntfy")
 
 	f.tickAt(10)
 
@@ -336,5 +327,57 @@ func TestFanOutSkipsABusyChannel(t *testing.T) {
 	}
 	if !strings.Contains(f.logs.String(), "still busy") {
 		t.Errorf("busy skip not logged: %s", f.logs.String())
+	}
+}
+
+// A channel-list edit while the send is in flight clears delivery_error
+// (§4.1), and the verdict computed before it — naming a channel the row no
+// longer carries — must not land on top.
+func TestFanOutVerdictYieldsToAChannelEdit(t *testing.T) {
+	f := newFixture(t)
+	withChannels(t, f, "tg")
+	r := f.create("x", 0, "tg")
+	f.sweep.channels = func(ctx context.Context, url, message string) string {
+		current, err := f.st.GetReminder(ctx, r.ID)
+		if err != nil {
+			t.Error(err)
+		}
+		none := []string{}
+		if _, err := f.st.UpdateReminder(ctx, current, store.ReminderUpdate{ExtraChannels: &none}, t0); err != nil {
+			t.Error(err)
+		}
+		return "timeout"
+	}
+
+	f.tickAt(10)
+
+	if got := f.deliveryError(r.ID); got != nil {
+		t.Errorf("delivery_error = %q after the channels were edited off", *got)
+	}
+}
+
+// A re-time into the past in the same second as phase 1 stamps notified_at
+// with that same now; the verdict must still yield to it (§4.1: a re-time
+// clears delivery_error).
+func TestFanOutVerdictYieldsToASameSecondRetime(t *testing.T) {
+	f := newFixture(t)
+	withChannels(t, f, "tg")
+	r := f.create("x", 0, "tg")
+	f.sweep.channels = func(ctx context.Context, url, message string) string {
+		current, err := f.st.GetReminder(ctx, r.ID)
+		if err != nil {
+			t.Error(err)
+		}
+		past := int64(t0 - 50)
+		if _, err := f.st.UpdateReminder(ctx, current, store.ReminderUpdate{DueAt: &past}, f.clock); err != nil {
+			t.Error(err)
+		}
+		return "timeout"
+	}
+
+	f.tickAt(10)
+
+	if got := f.deliveryError(r.ID); got != nil {
+		t.Errorf("delivery_error = %q after a same-second re-time", *got)
 	}
 }

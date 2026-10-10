@@ -331,7 +331,7 @@ func (s *Sweep) fanOutRow(phase context.Context, markedAt int64, r store.MarkedR
 	// describes what a socket did is committed once the socket is done
 	write, cancel := context.WithTimeout(context.WithoutCancel(phase), deleteTimeout)
 	defer cancel()
-	if err := s.store.SetDeliveryError(write, r.ID, markedAt, value); err != nil {
+	if err := s.store.SetDeliveryError(write, r, markedAt, value); err != nil {
 		s.log.Error("sweep: write delivery_error", "id", r.ID, "error", err)
 	}
 }
