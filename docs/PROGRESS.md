@@ -115,9 +115,9 @@ refusal, and that shoutrrr v0.21.2 panics on a generic URL whose query does
 not parse. Both are fixed.
 
 **Open questions for the owner** (spec decisions, not implemented):
-1. A channel endpoint can stream an unbounded response body into
-   shoutrrr's own `io.ReadAll`; bounding it means wrapping each service's
-   transport, which breaks the services that configure their own client.
+None. The three questions raised by the review were decided on 2026-10-10:
+§7.4's mask, §10.2's same-origin rule, and §7.2's trust model with a
+container memory ceiling.
 
 ## Commits outside the plan
 
@@ -162,4 +162,5 @@ one-step-one-commit index.
 | `3cbf64b` | second post-M4 review: web — editor saves, picker Enter, zone focus; `/simplify` |
 | `f069b6d` | this file: the second post-M4 review |
 | `d478630` | §7.4 mask: no path, host only when dotted — gotify/ifttt/wecom secrets no longer printed (owner decision) |
-| (this commit) | §10.2 same-origin rule via `http.CrossOriginProtection` — closes the sibling-subdomain CSRF case (owner decision) |
+| `cc146d4` | §10.2 same-origin rule via `http.CrossOriginProtection` — closes the sibling-subdomain CSRF case (owner decision) |
+| (this commit) | §7.2 channel endpoints trusted; `mem_limit: 256m` bounds a runaway reply (owner decision) |

@@ -433,6 +433,8 @@ If `extra_channels` is non-empty, resolve names against `channels` (skip disable
 
 **That bound is imposed by a wrapper, because shoutrrr's API cannot carry it.** `router.Send(message, params) []error` takes no `context.Context`, and several of its services build their own `http.Client` with no configurable timeout — so neither the 10 s per-channel timeout nor phase 3's whole-phase deadline is reachable through the library directly. Each channel send therefore runs `router.Send` on **its own goroutine**, writing the result into a buffered channel of one, while the caller `select`s on that channel and on a context derived from the phase's with a 10-second timeout — which is exactly how "the smaller of 10 s and the remaining budget" is obtained. Whichever arrives first is the verdict: a result is classified as above, and a context that expires first means the send is **abandoned** — recorded as `<name>: timeout`, the classification §7.3 already blesses for a send its budget cut short (§4.1) — with its goroutine left to finish in the background and be discarded, result and all. **A send the shutdown cancellation ends the same way (§10.1) lands on the same word**, and deliberately needs no new one: the `select` cannot tell a deadline from a cancel and does not have to, because `<name>: timeout` already means "attempted, did not complete" — which is exactly what happened, and the only shape a column that describes attempts (§4.1) can honestly carry for one the process stopped waiting on. This is what makes phase 3's "really ends at ~20 s" bound (§7.3) true regardless of what the library offers, and an abandoned goroutine holding a dead socket for a few seconds costs nothing at this scale: it has no lock, nothing left to write to, and it ends on its own client's timeout. §2's instruction to verify the module path on pkg.go.dev before pinning **extends to the API**: if the fork has grown a context-aware send or a settable `http.Client`, use it and the wrapper reduces to a plain call — but the bound must never depend on that.
 
+**A channel endpoint is trusted like any server you point nag at.** shoutrrr reads each reply whole (`io.ReadAll`) with no size cap, so an endpoint that answers with an endless body grows nag's memory until the send's timeout ends it — bounded in time, not in bytes. Capping it in nag would mean replacing each service's `http.Client`, which strips the TLS and auth settings the services put on their own (only `generic` takes an injected client cleanly), so the bound lives one level out instead: `compose.yaml`'s `mem_limit` (§10) turns the worst case from a choked VPS into a container restart. Nothing is lost when that happens: the reminder was marked before its fan-out (§7.3) and is not re-sent; only that one channel message is.
+
 Do not use ntfy's own delayed delivery. This app owns the schedule; ntfy is only an output.
 
 ### 7.3 The sweep
@@ -1056,6 +1058,7 @@ services:
     env_file: ./nag.env
     networks: [caddy]
     restart: unless-stopped
+    mem_limit: 256m   # a ceiling for a runaway channel reply (§7.2)
     labels:
       caddy: nag.example.com
       caddy.reverse_proxy: "{{upstreams 8080}}"

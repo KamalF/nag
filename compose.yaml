@@ -8,6 +8,10 @@ services:
     env_file: ./nag.env
     networks: [caddy]
     restart: unless-stopped
+    # a ceiling, not a budget: nag runs in a few tens of MB. It is there so a
+    # channel endpoint that answers with an endless body (shoutrrr reads it
+    # whole) restarts this container, not the box (SPEC §7.2)
+    mem_limit: 256m
     labels:
       caddy: nag.example.com
       caddy.reverse_proxy: "{{upstreams 8080}}"
