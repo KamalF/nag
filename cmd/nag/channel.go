@@ -1,0 +1,182 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net/url"
+	"regexp"
+	"strings"
+
+	"github.com/KamalF/nag/internal/notify"
+	"github.com/KamalF/nag/internal/store"
+)
+
+// slugPattern is §7.4's channel name rule. The name is a JSON array element
+// in extra_channels, a chip label and a CLI argument, and SQLite's UNIQUE on
+// TEXT is case-sensitive — so "ntfy" and "NTFY" would be two rows rendering
+// two identical chips. Lowercase at the door is one rule instead of
+// COLLATE NOCASE plus a matching fold at every send.
+var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
+
+const channelUsage = `usage: nag channel add <name> <shoutrrr-url>
+       nag channel list
+       nag channel rm <name>
+       nag channel enable <name>
+       nag channel disable <name>
+`
+
+// runChannel is `nag channel …` (§7.4). The final image has no shell and no
+// sqlite3, so this is the only way to manage the table, and there is no API
+// for it: a URL carries secrets, and the write path is a shell you already
+// have to be on the box to use. It needs NAG_DB and nothing else, and opens
+// it through the same store.Open as serve — so it creates and migrates the
+// file if it does not exist yet (§5.1).
+func runChannel(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprint(stderr, channelUsage)
+		return 2
+	}
+	verb, rest := args[0], args[1:]
+	want := map[string]int{"add": 2, "list": 0, "rm": 1, "enable": 1, "disable": 1}
+	n, known := want[verb]
+	if !known || len(rest) != n {
+		fmt.Fprint(stderr, channelUsage)
+		return 2
+	}
+
+	st, err := store.Open(envOr("NAG_DB", defaultDB))
+	if err != nil {
+		fmt.Fprintf(stderr, "FATAL: %v\n", err)
+		return 1
+	}
+	defer st.Close()
+	ctx := context.Background()
+
+	switch verb {
+	case "add":
+		err = channelAdd(ctx, st, rest[0], rest[1], stdout)
+	case "list":
+		err = channelList(ctx, st, stdout)
+	case "rm":
+		err = channelRemove(ctx, st, rest[0], stdout)
+	case "enable", "disable":
+		err = channelSetEnabled(ctx, st, rest[0], verb == "enable", stdout)
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", describeChannelError(err))
+		return 1
+	}
+	return 0
+}
+
+// describeChannelError says plainly what a busy database means: the serving
+// container holds the write lock and busy_timeout ran out (§7.4).
+func describeChannelError(err error) error {
+	if store.IsBusy(err) {
+		return errors.New("the database is locked — the running server is probably writing to it; retry in a moment")
+	}
+	return err
+}
+
+// channelAdd hands the URL to shoutrrr's router before writing the row and
+// refuses one it cannot parse, naming the parse error: otherwise a typo is
+// stored happily and surfaces weeks later as a delivery_error on a reminder
+// you cared about.
+func channelAdd(ctx context.Context, st *store.Store, name, rawURL string, stdout io.Writer) error {
+	if !slugPattern.MatchString(name) {
+		return fmt.Errorf("channel name %q must match %s", name, slugPattern)
+	}
+	if err := notify.ValidateChannelURL(rawURL); err != nil {
+		return fmt.Errorf("shoutrrr cannot use this URL: %v", err)
+	}
+	if err := st.AddChannel(ctx, name, rawURL); err != nil {
+		if errors.Is(err, store.ErrChannelExists) {
+			return fmt.Errorf("a channel named %q already exists — rm it first to repoint it", name)
+		}
+		return err
+	}
+	fmt.Fprintf(stdout, "added %s (%s)\n", name, maskChannelURL(rawURL))
+	return nil
+}
+
+// channelList prints every channel with its URL masked — never in full.
+func channelList(ctx context.Context, st *store.Store, stdout io.Writer) error {
+	rows, err := st.ChannelRows(ctx)
+	if err != nil {
+		return err
+	}
+	if len(rows) == 0 {
+		fmt.Fprintln(stdout, "no channels")
+		return nil
+	}
+	for _, c := range rows {
+		state := "enabled"
+		if !c.Enabled {
+			state = "disabled"
+		}
+		fmt.Fprintf(stdout, "%-32s %-8s %s\n", c.Name, state, maskChannelURL(c.URL))
+	}
+	return nil
+}
+
+// channelRemove warns and proceeds — no --force, since there are no flags
+// (§3) and a prompt would be dead weight in a compose run that is not
+// always a TTY. Reminders still naming the channel become orphans, which
+// are defined behaviour (§4.1).
+func channelRemove(ctx context.Context, st *store.Store, name string, stdout io.Writer) error {
+	refs, err := st.ChannelReferences(ctx, name)
+	if err != nil {
+		return err
+	}
+	if err := st.RemoveChannel(ctx, name); err != nil {
+		if errors.Is(err, store.ErrNoSuchChannel) {
+			return fmt.Errorf("no channel named %q", name)
+		}
+		return err
+	}
+	fmt.Fprintf(stdout, "removed %s\n", name)
+	if refs > 0 {
+		fmt.Fprintf(stdout, "warning: %d reminder(s) still name %s; it is skipped when they fire, and stays on them until edited off\n",
+			refs, name)
+	}
+	return nil
+}
+
+func channelSetEnabled(ctx context.Context, st *store.Store, name string, enabled bool, stdout io.Writer) error {
+	if err := st.SetChannelEnabled(ctx, name, enabled); err != nil {
+		if errors.Is(err, store.ErrNoSuchChannel) {
+			return fmt.Errorf("no channel named %q", name)
+		}
+		return err
+	}
+	state := "enabled"
+	if !enabled {
+		state = "disabled"
+	}
+	fmt.Fprintf(stdout, "%s %s\n", name, state)
+	return nil
+}
+
+// maskChannelURL is §7.4's pinned mask: scheme, host, and the last path
+// segment, with userinfo and query always elided behind a literal "…" —
+// one shape whether it dropped a password, four path segments, or nothing.
+// A shoutrrr URL keeps its secret in the userinfo and the query, and its
+// path is usually the harmless half, which is why this is not §7.5's
+// last-eight-characters form.
+//
+//	ntfy://user:tok_abc123@ntfy.example.com/alerts → ntfy://ntfy.example.com/…/alerts
+//	telegram://token@telegram?chats=123           → telegram://telegram/…
+func maskChannelURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" {
+		return "(unparseable URL)"
+	}
+	masked := u.Scheme + "://" + u.Host + "/…"
+	path := strings.TrimSuffix(u.Path, "/")
+	if i := strings.LastIndex(path, "/"); i >= 0 && i < len(path)-1 {
+		masked += path[i:]
+	}
+	return masked
+}

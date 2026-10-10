@@ -51,6 +51,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runServe(stderr)
 	case "genkeys":
 		return runGenkeys(stdout, stderr)
+	case "channel":
+		return runChannel(args[1:], stdout, stderr)
 	case "config":
 		if len(args) != 2 || args[1] != "check" {
 			fmt.Fprint(stderr, usage)
