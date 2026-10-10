@@ -105,10 +105,20 @@ new findings every round, each fix exposing the next. Both are fixed and
 tested as of round 4, but no fresh round has reviewed the last fixes, and
 the simplify pass has not run.
 
+A second `/review-loop` over the same base, after the Go 1.27.2 bump,
+converged. Accepted blocker/should-fix by round: 7, 2, 1, 1, 0, then the
+simplify pass, then 1, 2, 0. Two round-1 fixes were corrected in round 2.
+`busyFor` went back to about one tick, and the reason is recorded in
+`channel.go`. The Enter exemption was narrowed to Cancel. The rounds after
+simplify found that a host-held key (wecom) was printed by `channel add`'s
+refusal, and that shoutrrr v0.21.2 panics on a generic URL whose query does
+not parse. Both are fixed.
+
 **Open questions for the owner** (spec decisions, not implemented):
 1. §7.4's pinned `list` mask prints the whole secret for services that keep
    it in the last path segment or the host (gotify's token, opsgenie's key,
-   ifttt's webhook key).
+   ifttt's webhook key, wecom's key). The same mask is used when a URL is
+   typed where `nag channel` expects a name.
 2. §10.2's bodyless-mutation exemption leans on `SameSite=Lax`, which does
    not stop a page on a sibling subdomain (same site) from auto-submitting
    an empty form to `/done`, `/undone` or `/api/push/test`.
@@ -152,4 +162,9 @@ one-step-one-commit index.
 | `d35dea5` | post-M4 review: web — editor, focus and toast races |
 | `f208f71` | post-M4 review: README fixes, SPEC §10.3 backup wording |
 | `a129b27` | this file: the post-M4 review and its open questions |
-| (this commit) | Go 1.27.2 and every module to latest, shoutrrr v0.21.2 (ADR-002 supersedes ADR-001) |
+| `bac42eb` | Go 1.27.2 and every module to latest, shoutrrr v0.21.2 (ADR-002 supersedes ADR-001) |
+| `6f68835` | second post-M4 review: notify — send slot, context senders, verdict guard |
+| `53528b7` | second post-M4 review: cli — no secret echoed by `nag channel` |
+| `2b7ace3` | second post-M4 review: serve — force-close after the shutdown grace |
+| `3cbf64b` | second post-M4 review: web — editor saves, picker Enter, zone focus; `/simplify` |
+| (this commit) | this file: the second post-M4 review |
