@@ -162,6 +162,15 @@ button:not(:disabled):active { transform: scale(.96); }
 }
 .act.pri { border-color: var(--ink-quiet); color: var(--ink); }
 
+/* the channel marker: quiet when channels are attached, amber when the
+   last fan-out failed (§9.2) */
+.row .marker {
+  flex: none; align-self: center; width: 7px; height: 7px; border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--ink-faint);
+}
+.row .marker.failed { background: var(--late); box-shadow: none; }
+.delivery-error { margin: 10px 0 0; font-size: 13px; color: var(--late); overflow-wrap: anywhere; }
+
 /* upcoming recedes; only what is due carries full contrast (§9.1) */
 .row.later .txt { color: var(--ink-quiet); }
 .row.late .txt { color: var(--ink); }

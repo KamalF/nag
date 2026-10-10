@@ -422,6 +422,12 @@ function openEditor(row) {
   row.li.classList.add('editing');
   row.txt.hidden = true;
   row.acts.hidden = true;
+  if (row.reminder.delivery_error !== null) {
+    const failure = document.createElement('p');
+    failure.className = 'delivery-error';
+    failure.textContent = 'Last delivery failed — ' + row.reminder.delivery_error;
+    bar.el.append(failure);
+  }
   row.li.prepend(bar.el);
   bar.input.focus();
   bar.input.setSelectionRange(bar.input.value.length, bar.input.value.length);
@@ -1426,8 +1432,24 @@ function updateRow(r, late) {
     row.text = r.text;
     renderText(row.txt, r.text);
   }
+  paintMarker(row.marker, r);
   row.when.textContent = whenText(r.due_at);
   return row;
+}
+
+// paintMarker is §9.2's channel marker: a small quiet dot on a row with
+// channels attached, amber when delivery_error is set — the error is its
+// accessible label, and its full text shows in the editor, since a title
+// tooltip alone is unreachable on the phone where you notice the amber.
+function paintMarker(marker, r) {
+  const failed = r.delivery_error !== null;
+  marker.hidden = r.extra_channels.length === 0;
+  marker.classList.toggle('failed', failed);
+  const label = failed
+    ? 'Delivery failed: ' + r.delivery_error
+    : 'Also sent to ' + r.extra_channels.join(', ');
+  marker.setAttribute('aria-label', label);
+  marker.title = label;
 }
 
 function createRow(id) {
@@ -1435,12 +1457,15 @@ function createRow(id) {
   li.dataset.id = id; // what §9.5's focus-reminder finds the row by
   const txt = document.createElement('span');
   txt.className = 'txt';
+  const marker = document.createElement('span');
+  marker.className = 'marker';
+  marker.setAttribute('role', 'img');
   const when = document.createElement('span');
   when.className = 'when';
   const acts = document.createElement('span');
   acts.className = 'acts';
-  li.append(txt, when, acts);
-  const row = { id, li, txt, when, acts, late: null, text: null, reminder: null, editing: false };
+  li.append(txt, marker, when, acts);
+  const row = { id, li, txt, marker, when, acts, late: null, text: null, reminder: null, editing: false };
   // clicking the text or the time opens the editor; a link inside the text
   // is followed instead (§9.2)
   txt.addEventListener('click', (e) => {
