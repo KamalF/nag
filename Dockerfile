@@ -1,7 +1,7 @@
 # Nag — §10. Multi-stage build, FROM scratch final image.
-# The Go image follows ADR-001 (go.mod and the build on one version), not
+# The Go image follows ADR-002 (go.mod and the build on one version), not
 # the spec sketch's literal 1.24.
-FROM golang:1.26 AS build
+FROM golang:1.27 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

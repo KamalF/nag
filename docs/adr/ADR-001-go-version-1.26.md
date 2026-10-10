@@ -2,6 +2,9 @@
 
 **Date:** 2026-08-19
 
+Superseded by [ADR-002](ADR-002-go-version-1.27.md): the version moved to Go 1.27; the
+single-version principle below still stands.
+
 ## Context
 
 SPEC.md §10 writes `FROM golang:1.24` in the Dockerfile sketch. That reads as "recent stable

@@ -28,7 +28,6 @@ func TestClassifyChannelError(t *testing.T) {
 		want string
 	}{
 		{"status as a value", fmt.Errorf("ntfy: %w", jsonclient.Error{StatusCode: 401}), "http 401"},
-		{"status as a pointer", fmt.Errorf("x: %w", &jsonclient.Error{StatusCode: 503}), "http 503"},
 		{"dns", &net.DNSError{Err: "no such host", Name: "ntfy.example.com"}, "dns"},
 		{"refused", &net.OpError{Op: "dial", Err: os.NewSyscallError("connect", syscall.ECONNREFUSED)}, "refused"},
 		{"net timeout", &net.OpError{Op: "dial", Err: timeoutErr{}}, "timeout"},

@@ -49,9 +49,9 @@ func ValidateChannelURL(rawURL string) error {
 // "attempted, did not complete", whether a deadline or a shutdown ended it.
 //
 // §7.2 expects the abandoned goroutine to end on its own client's timeout.
-// Most v0.18.0 services do bound themselves, but not all: smtp puts no
-// deadline on the conversation after its dial, and pushbullet and generic
-// fall back to a bare http.Client. So the leak is bounded here, whatever
+// Most v0.21.2 services do bound themselves, but not all: pushbullet,
+// opsgenie, notifiarr and generic fall back to a bare http.Client (generic
+// gets a timed one injected, below). So the leak is bounded here, whatever
 // the service does: while an earlier send to the same URL is still running
 // — and has run for less than busyFor — no new one starts, and the verdict
 // is NotAttempted. Nothing was attempted, so nothing is recorded for it
@@ -59,8 +59,9 @@ func ValidateChannelURL(rawURL string) error {
 // one goroutine per busyFor, not one per reminder, and the channel is
 // tried again after that rather than muted for good.
 //
-// A service offering SendContext gets the context too; none does in
-// v0.18.0, so that is a hook for when the library grows it.
+// A service offering SendContext gets the context too — in v0.21.2, smtp
+// and xmpp; smtp turns the context's deadline into one on its connection,
+// so an abandoned smtp send now ends on its own.
 func SendChannel(ctx context.Context, rawURL, message string) string {
 	slot := &sendSlot{started: time.Now()}
 	if prev, busy := inFlight.LoadOrStore(rawURL, slot); busy {
@@ -99,7 +100,7 @@ func SendChannel(ctx context.Context, rawURL, message string) string {
 const NotAttempted = "not attempted"
 
 // busyFor is how long a running send keeps new ones to its URL from
-// starting: past every client timeout a v0.18.0 service sets (30 s is the
+// starting: past every client timeout a v0.21.2 service sets (30 s is the
 // longest), so only a send that will never end on its own is ever taken
 // over.
 var busyFor = 3 * ChannelSendTimeout
@@ -157,17 +158,10 @@ func classifyChannelError(err error) string {
 }
 
 func failureStatus(err error) int {
+	// jsonclient returns its Error by value — it has a value receiver
 	var status jsonclient.Error
-	var statusPtr *jsonclient.Error
-	code := 0
-	switch {
-	case errors.As(err, &status):
-		code = status.StatusCode
-	case errors.As(err, &statusPtr):
-		code = statusPtr.StatusCode
+	if errors.As(err, &status) && status.StatusCode >= 400 {
+		return status.StatusCode
 	}
-	if code < 400 {
-		return 0
-	}
-	return code
+	return 0
 }

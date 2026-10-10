@@ -151,3 +151,5 @@ one-step-one-commit index.
 | `22dd728` | post-M4 review: cli — no URL in `channel add`'s refusal |
 | `d35dea5` | post-M4 review: web — editor, focus and toast races |
 | `f208f71` | post-M4 review: README fixes, SPEC §10.3 backup wording |
+| `a129b27` | this file: the post-M4 review and its open questions |
+| (this commit) | Go 1.27.2 and every module to latest, shoutrrr v0.21.2 (ADR-002 supersedes ADR-001) |
