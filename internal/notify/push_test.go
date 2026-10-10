@@ -2,11 +2,16 @@ package notify
 
 import (
 	"context"
+	"crypto/ecdh"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -177,7 +182,7 @@ func TestSendToOptionsAndLogging(t *testing.T) {
 	p.SendTo(t.Context(), time.Second, []byte("{}"), theSubscription(t, st))
 
 	if gotOpts.TTL != 259200 || gotOpts.Topic != "nag" || gotOpts.Urgency != webpush.UrgencyHigh ||
-		gotOpts.Subscriber != "mailto:kamal@example.net" || gotOpts.VAPIDPublicKey != configuredKey {
+		gotOpts.Subscriber != "kamal@example.net" || gotOpts.VAPIDPublicKey != configuredKey {
 		t.Errorf("options = %+v, want the §7.1 pinned set", gotOpts)
 	}
 	if gotSub.Endpoint != fullEndpoint || gotSub.Keys.P256dh != "p256dh" || gotSub.Keys.Auth != "auth" {
@@ -233,5 +238,71 @@ func TestDeleteRespectsAnExpiredCallerBudget(t *testing.T) {
 	}
 	if n := subscriptionCount(t, st); n != 1 {
 		t.Errorf("%d subscriptions left, want the row still there for the next sweep", n)
+	}
+}
+
+// The claim that goes out, not the option handed to the library: webpush-go
+// adds its own "mailto:" to a non-https Subscriber, so the JWT's sub must be
+// read off a real request to know what a push service sees.
+func TestVAPIDSubjectClaimIsOneMailto(t *testing.T) {
+	var auth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	private, public, err := webpush.GenerateVAPIDKeys()
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := ecdh.P256().GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authSecret := make([]byte, 16)
+	rand.Read(authSecret)
+	sub := store.Subscription{
+		Endpoint:    srv.URL + "/send/abc",
+		P256dh:      base64.RawURLEncoding.EncodeToString(client.PublicKey().Bytes()),
+		Auth:        base64.RawURLEncoding.EncodeToString(authSecret),
+		VAPIDPublic: public,
+	}
+	st, err := store.Open(filepath.Join(t.TempDir(), "nag.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	for subject, want := range map[string]string{
+		"mailto:kamal@example.net": "mailto:kamal@example.net",
+		"https://nag.example.net":  "https://nag.example.net",
+		"MAILTO:kamal@example.net": "mailto:kamal@example.net", // §5.1's check accepts it
+		"HTTPS://nag.example.net":  "https://nag.example.net",
+	} {
+		t.Run(subject, func(t *testing.T) {
+			p := NewPushSender(st, slog.New(slog.NewTextHandler(io.Discard, nil)), public, private, subject)
+			if res := p.SendTo(t.Context(), 5*time.Second, []byte(`{"n":1,"texts":["x"]}`), sub); res.Err != "" {
+				t.Fatalf("send failed: %+v", res)
+			}
+
+			// Authorization: vapid t=<jwt>, k=<key>
+			token := strings.TrimPrefix(strings.Split(auth, ",")[0], "vapid t=")
+			parts := strings.Split(token, ".")
+			if len(parts) != 3 {
+				t.Fatalf("no JWT in %q", auth)
+			}
+			raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+			if err != nil {
+				t.Fatal(err)
+			}
+			var claims struct{ Sub string }
+			if err := json.Unmarshal(raw, &claims); err != nil {
+				t.Fatal(err)
+			}
+			if claims.Sub != want {
+				t.Errorf("sub claim = %q, want %q", claims.Sub, want)
+			}
+		})
 	}
 }

@@ -1,6 +1,7 @@
 package notify
 
 import (
+	"bytes"
 	"encoding/json"
 	"unicode/utf8"
 
@@ -41,12 +42,28 @@ func buildDigestPayload(held []store.HeldRow) ([]byte, error) {
 		// the single form carries the full text, untruncated
 		p.ID, p.DueAt = &held[0].ID, &held[0].DueAt
 		p.Texts = []string{flattenLinks(held[0].Text)}
-		return json.Marshal(p)
+		return marshalPayload(p)
 	}
 	for _, r := range held[:min(len(held), maxTexts)] {
 		p.Texts = append(p.Texts, truncateBytes(flattenLinks(r.Text), maxTextBytes))
 	}
-	return json.Marshal(p)
+	return marshalPayload(p)
+}
+
+// marshalPayload is json.Marshal without HTML escaping. json.Marshal writes
+// each <, > and & as a six-byte \u escape, so a 1000-byte text of them
+// (§8.3 allows it) becomes 6000 bytes — past the ~4 KB encrypted-payload
+// ceiling, where the send fails before any socket opens and the row, already
+// stamped, is never pushed. The worker reads the payload with JSON.parse,
+// never as markup, so the escaping buys nothing.
+func marshalPayload(p pushPayload) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(p); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
 }
 
 // truncateBytes cuts s so the result — ellipsis included — is at most limit
@@ -75,5 +92,5 @@ const testPushText = "Nag test notification"
 // and due_at set to the server's now, so the body reads through the
 // ordinary formatter (§9.11) instead of needing a second shape in sw.js.
 func TestPayload(now int64) ([]byte, error) {
-	return json.Marshal(pushPayload{N: 1, DueAt: &now, Texts: []string{testPushText}})
+	return marshalPayload(pushPayload{N: 1, DueAt: &now, Texts: []string{testPushText}})
 }

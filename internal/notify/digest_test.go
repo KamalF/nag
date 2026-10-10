@@ -574,3 +574,21 @@ func TestTheWorstLegitimateLatenessStillArrives(t *testing.T) {
 		t.Error("the bound refused a row the two 30-minute constants allow")
 	}
 }
+
+// lastPushAt is memory, so after a backward clock step (NTP, a snapshot
+// restore) a plain difference would read the window as closed for the whole
+// length of the jump. An unrecognisable window counts as open.
+func TestBackwardClockStepOpensTheWindow(t *testing.T) {
+	f := newFixture(t)
+	f.subscribe("https://push.example/aaaaaaaa")
+	f.create("first", 0)
+	f.tickAt(0)
+	f.sender.payloads = nil
+
+	f.create("after the step", -600)
+	f.tickAt(-600 + 10) // the clock stepped ten minutes back
+
+	if got := f.onlyPush(); got.N != 1 {
+		t.Fatalf("want the row pushed after a backward step, got %+v", got)
+	}
+}

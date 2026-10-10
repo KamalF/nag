@@ -113,3 +113,16 @@ func TestPayloadFlattensLinks(t *testing.T) {
 		t.Errorf("texts[0] = %q, want the flattened form", p.Texts[0])
 	}
 }
+
+// The worst text §8.3 accepts must fit the ~4 KB encrypted-payload ceiling.
+// With json.Marshal's HTML escaping each & costs six bytes, so 1000 of them
+// was a 6 KB payload that failed inside the library on every send.
+func TestPayloadWorstCaseTextFits(t *testing.T) {
+	raw, err := buildDigestPayload([]store.HeldRow{{ID: 1, Text: strings.Repeat("&", 1000), DueAt: t0}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) > 1100 {
+		t.Errorf("payload is %d bytes, want the text carried unescaped", len(raw))
+	}
+}

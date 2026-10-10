@@ -1,7 +1,6 @@
 package notify
 
 import (
-	"net/url"
 	"regexp"
 	"strings"
 )
@@ -39,9 +38,11 @@ func rendersAsLink(target string) bool {
 		// by the grammar — refusing it keeps the failure visible (§9.10)
 		return false
 	}
-	u, err := url.Parse(target)
-	if err != nil {
-		return false
-	}
-	return u.Scheme == "http" || u.Scheme == "https"
+	// The scheme is read off the prefix, case-insensitively, and nothing
+	// else is checked: a full parse would add a third condition §9.10 does
+	// not have, and Go's strict url.Parse refuses targets like ".../50%"
+	// that the browser's lenient parser accepts — the two sides would then
+	// disagree on a row the client renders as a link.
+	lower := strings.ToLower(target)
+	return strings.HasPrefix(lower, "http:") || strings.HasPrefix(lower, "https:")
 }

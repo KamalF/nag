@@ -25,6 +25,8 @@ func TestFlattenLinks(t *testing.T) {
 		{"plain text untouched", "buy milk", "buy milk"},
 		{"empty target stays literal", "[a]()", "[a]()"},
 		{"relative target stays literal", "see [note](internal)", "see [note](internal)"},
+		{"scheme is case-insensitive", "[a](HTTPS://x)", "a"},
+		{"a bare percent still links", "[sale](https://shop.example/50%)", "sale"},
 		{"link amid literals", "[a](ftp://x) then [b](https://y)", "[a](ftp://x) then b"},
 	}
 	for _, tt := range tests {

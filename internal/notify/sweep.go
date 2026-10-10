@@ -1,5 +1,5 @@
-// Package notify owns the sweep goroutine (§7.3) and — in M2 — the Web
-// Push sender and shoutrrr fan-out it drives.
+// Package notify owns the sweep goroutine (§7.3), the Web Push sender it
+// drives (M2), and — with M4 — the shoutrrr fan-out.
 package notify
 
 import (

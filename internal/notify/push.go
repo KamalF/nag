@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"syscall"
 	"time"
 
@@ -35,9 +36,27 @@ func NewPushSender(st *store.Store, log *slog.Logger, vapidPublic, vapidPrivate,
 		log:          log,
 		vapidPublic:  vapidPublic,
 		vapidPrivate: vapidPrivate,
-		subject:      subject,
+		subject:      librarySubscriber(subject),
 		sendFn:       webpush.SendNotificationWithContext,
 	}
+}
+
+// librarySubscriber adapts NAG_VAPID_SUBJECT to webpush-go, which prefixes
+// "mailto:" to any Subscriber not starting with "https:". §5.1 requires the
+// full URL in the env, so passed through as-is a mailto subject would sign
+// sub = "mailto:mailto:…", which is not an RFC 8292 contact and which a
+// strict push service may answer with a 403 on every send. The library's
+// test is case-sensitive while the §5.1 boot check (url.Parse) is not, so
+// the scheme is normalised here rather than trusted.
+func librarySubscriber(subject string) string {
+	scheme, rest, _ := strings.Cut(subject, ":")
+	switch strings.ToLower(scheme) {
+	case "mailto":
+		return rest
+	case "https":
+		return "https:" + rest
+	}
+	return subject
 }
 
 // deleteTimeout bounds a deletion whose caller has no deadline of its own —
