@@ -38,6 +38,8 @@ func testServerWithDB(t *testing.T, logs io.Writer) (*Server, string) {
 	web := fstest.MapFS{
 		"index.html":           &fstest.MapFile{Data: []byte("<h1>test index</h1>")},
 		"manifest.webmanifest": &fstest.MapFile{Data: []byte(`{"name":"Nag"}`)},
+		"app.js":               &fstest.MapFile{Data: []byte("'use strict';")},
+		"sw.js":                &fstest.MapFile{Data: []byte("'use strict';")},
 	}
 	s := New(Options{
 		Store:       st,

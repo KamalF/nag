@@ -87,8 +87,8 @@ claim going out as `mailto:mailto:…`.
 | [x] | 42 | Sweep phase 3: fan-out | `b419b8c` |
 | [x] | 43 | `delivery_error` surfacing | `470623d` |
 | [x] | 44 | Sweep phase 4: retention purge | `0cae508` |
-| [x] | 45 | SIGHUP reload and the two hashes | |
-| [ ] | 46 | Security headers and Content-Type rule | |
+| [x] | 45 | SIGHUP reload and the two hashes | `351f47e` |
+| [x] | 46 | Security headers and Content-Type rule | |
 | [ ] | 47 | Graceful shutdown and `nag healthcheck` | |
 | [ ] | 48 | Dockerfile, .dockerignore, compose | |
 | [ ] | 49 | `nag.env.example` and README | |

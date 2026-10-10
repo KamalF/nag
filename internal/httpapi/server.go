@@ -51,6 +51,7 @@ type Server struct {
 	store *store.Store
 	live  *config.Live // load once per request: one snapshot throughout (§5.5)
 	web   fs.FS
+	etags map[string]string // path → content hash of each embedded asset (§10.2)
 	log   *slog.Logger
 
 	token       string
@@ -80,6 +81,7 @@ func New(o Options) *Server {
 		store:       o.Store,
 		live:        o.Config,
 		web:         o.Web,
+		etags:       assetETags(o.Web),
 		log:         o.Log,
 		token:       o.Token,
 		cookieKey:   cookieKey(o.Token),
@@ -122,7 +124,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("/api/", s.handleAPINotFound)
 	mux.Handle("/api/", s.requireAuth(api))
 
-	return s.logRequests(capBody(mux))
+	return s.logRequests(securityHeaders(s.caching(capBody(requireJSONBody(mux)))))
 }
 
 // handleHealthz answers 200 only after the database answered SELECT 1 —

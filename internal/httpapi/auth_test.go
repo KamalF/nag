@@ -86,8 +86,7 @@ func TestSessionRejections(t *testing.T) {
 func TestLoginIssuesThePinnedCookie(t *testing.T) {
 	h := testServer(t, nil).Handler()
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/login",
-		strings.NewReader(`{"token":"`+testToken+`"}`)))
+	h.ServeHTTP(rec, loginRequest(t.Context(), testToken))
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("POST /login = %d, want 204", rec.Code)
@@ -112,8 +111,7 @@ func TestLoginIssuesThePinnedCookie(t *testing.T) {
 func TestLoginWrongToken(t *testing.T) {
 	h := testServer(t, nil).Handler()
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/login",
-		strings.NewReader(`{"token":"wrong"}`)))
+	h.ServeHTTP(rec, loginRequest(t.Context(), "wrong"))
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("POST /login = %d, want 401", rec.Code)
 	}
@@ -143,13 +141,15 @@ func TestAbandonedFailedLoginLeavesTheQueue(t *testing.T) {
 			done := make(chan int)
 			go func() {
 				rec := httptest.NewRecorder()
-				h.ServeHTTP(rec, httptest.NewRequestWithContext(ctx, http.MethodPost, "/login",
-					strings.NewReader(`{"token":"wrong"}`)))
+				h.ServeHTTP(rec, loginRequest(ctx, "wrong"))
 				done <- rec.Code
 			}()
 			if !tt.slotHeld {
 				// cancel only once the request is inside the sleep
-				for len(s.loginSlot) == 0 {
+				for deadline := time.Now().Add(5 * time.Second); len(s.loginSlot) == 0; {
+					if time.Now().After(deadline) {
+						t.Fatal("the failed login never took the slot")
+					}
 					time.Sleep(time.Millisecond)
 				}
 			}
@@ -263,4 +263,11 @@ func TestSlidingRenewal(t *testing.T) {
 			t.Errorf("re-issued expiry %v is not a full Max-Age ahead", expiry)
 		}
 	})
+}
+
+func loginRequest(ctx context.Context, token string) *http.Request {
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/login",
+		strings.NewReader(`{"token":"`+token+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	return req
 }
