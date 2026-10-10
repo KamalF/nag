@@ -568,6 +568,70 @@ function renderState(state) {
   if (subscriptionSynced) renderNotifySlot(state.push_subscribed);
 }
 
+// --- time strings (§9.11) ---
+
+// whenText and fullText are the only two things that format a time, here
+// and in sw.js's copy of the same table (the worker cannot import this
+// file). The connectives are English; the clock, weekday and month are the
+// device's locale, in the browser's timezone (§6).
+const clockFormat = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+const weekdayFormat = new Intl.DateTimeFormat(undefined, { weekday: 'long' });
+const dayMonthFormat = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'long' });
+const dayMonthYearFormat = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+const longDateFormat = new Intl.DateTimeFormat(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+const longDateYearFormat = new Intl.DateTimeFormat(undefined,
+  { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+// whenText is the short form: a row's time, the picker's relative line, and
+// the notification body. First match wins, top to bottom — the conditions
+// overlap by design, so the order is the specification. The three rows at
+// the top are durations; from "today" down every row is a calendar
+// comparison, because mixing the two makes a boundary drift by up to a day
+// depending on when you glance at it.
+function whenText(dueAt) {
+  const d = dueAt - now();
+  if (d <= -86400) return count(Math.floor(-d / 86400), 'day') + ' late';
+  if (d <= -3600) return Math.floor(-d / 3600) + ' h late';
+  if (d <= -60) return Math.floor(-d / 60) + ' min late';
+  if (d < 60) return 'now';
+  if (d < 3600) return 'in ' + count(Math.floor(d / 60), 'minute');
+  const due = new Date(dueAt * 1000);
+  const today = new Date(now() * 1000);
+  const days = calendarDaysBetween(today, due);
+  const time = clockFormat.format(due);
+  if (days === 0) return 'today at ' + time;
+  if (days === 1) return 'tomorrow at ' + time;
+  if (days <= 6) return weekdayFormat.format(due) + ' at ' + time;
+  if (due.getFullYear() === today.getFullYear()) return dayMonthFormat.format(due) + ' at ' + time;
+  return dayMonthYearFormat.format(due) + ' at ' + time;
+}
+
+// fullText is the long form, only for the picker's summary line: weekday,
+// day, month and — only outside the current year — the year, then the time
+// the summary emphasises. It returns the two halves so the caller can build
+// that emphasis as nodes (§9.7).
+function fullText(dueAt) {
+  const due = new Date(dueAt * 1000);
+  const sameYear = due.getFullYear() === new Date(now() * 1000).getFullYear();
+  return {
+    date: (sameYear ? longDateFormat : longDateYearFormat).format(due),
+    time: clockFormat.format(due),
+  };
+}
+
+// calendarDaysBetween is the difference between two local midnights, in
+// whole days. It goes through Date.UTC so a DST change in between — a
+// 23- or 25-hour day — cannot round the count the wrong way.
+function calendarDaysBetween(from, to) {
+  const utc = (d) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  return Math.round((utc(to) - utc(from)) / 86400000);
+}
+
+// every count is singular at 1: "1 day late", "in 1 minute"
+function count(n, unit) {
+  return n + ' ' + unit + (n === 1 ? '' : 's');
+}
+
 // --- badge (§9.3) ---
 
 // setBadge writes the overdue count — never the total — to all three
@@ -746,7 +810,7 @@ function renderZone(ul, rows, late) {
     txt.textContent = r.text;
     const when = document.createElement('span');
     when.className = 'when';
-    when.textContent = new Date(r.due_at * 1000).toLocaleString();
+    when.textContent = whenText(r.due_at);
 
     const acts = document.createElement('span');
     acts.className = 'acts';

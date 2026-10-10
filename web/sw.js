@@ -88,20 +88,40 @@ function draw(p) {
   return { title: p.n + ' reminders need you', body };
 }
 
-// whenText is a provisional §9.11 short form: the three duration rows, and a
-// locale-formatted date for everything below them. M3 replaces it with the
-// full table — here and in app.js separately, since sw.js cannot import from
-// app.js. The worker has no server offset (there is no page to hold one), so
-// its now() is the device clock; it is a nudge, and the list it points at is
-// correct either way (§9.11).
+// whenText is the §9.11 short form — the worker's own copy of app.js's
+// table, since sw.js cannot import from app.js. A Go test keeps the two
+// byte-identical: thresholds and units are exactly what drifts silently
+// between copies. The worker has no server offset (there is no page to hold
+// one), so its now() is the device clock; it is a nudge, and the list it
+// points at is correct either way (§9.11).
+const clockFormat = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+const weekdayFormat = new Intl.DateTimeFormat(undefined, { weekday: 'long' });
+const dayMonthFormat = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'long' });
+const dayMonthYearFormat = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+
+const now = () => Math.floor(Date.now() / 1000);
+
 function whenText(dueAt) {
-  const d = dueAt - Math.floor(Date.now() / 1000);
+  const d = dueAt - now();
   if (d <= -86400) return count(Math.floor(-d / 86400), 'day') + ' late';
   if (d <= -3600) return Math.floor(-d / 3600) + ' h late';
   if (d <= -60) return Math.floor(-d / 60) + ' min late';
   if (d < 60) return 'now';
   if (d < 3600) return 'in ' + count(Math.floor(d / 60), 'minute');
-  return new Date(dueAt * 1000).toLocaleString();
+  const due = new Date(dueAt * 1000);
+  const today = new Date(now() * 1000);
+  const days = calendarDaysBetween(today, due);
+  const time = clockFormat.format(due);
+  if (days === 0) return 'today at ' + time;
+  if (days === 1) return 'tomorrow at ' + time;
+  if (days <= 6) return weekdayFormat.format(due) + ' at ' + time;
+  if (due.getFullYear() === today.getFullYear()) return dayMonthFormat.format(due) + ' at ' + time;
+  return dayMonthYearFormat.format(due) + ' at ' + time;
+}
+
+function calendarDaysBetween(from, to) {
+  const utc = (d) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  return Math.round((utc(to) - utc(from)) / 86400000);
 }
 
 function count(n, unit) {
