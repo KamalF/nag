@@ -74,14 +74,27 @@ func (s *Server) caching(next http.Handler) http.Handler {
 	})
 }
 
-// requireJSONBody is §10.2's CSRF rule: a mutating request that carries a
-// body must say application/json, which an HTML form cannot produce
-// cross-origin. Bodyless mutations — /done, /undone, DELETE, the push test
-// — are exempt by construction, so their curl invocations stay bare; they
-// are safe for the same reason the rule works, since a cross-origin form
-// can send neither the Authorization header nor, under SameSite=Lax, the
-// cookie. /logout is exempt outright: the worst a cross-origin form gets
-// there is logging you out of your own browser.
+// sameOriginOnly is §10.2's first CSRF rule: a browser request that is not
+// same-origin is refused on every mutating method, by the standard
+// library's check of Sec-Fetch-Site (or Origin against Host). SameSite=Lax
+// alone is not enough: it is about the site, so a page on a sibling
+// subdomain still gets the cookie sent with an empty form POST to /done.
+// A request with neither header is curl or another non-browser client,
+// which authenticates with the bearer token and passes.
+func sameOriginOnly(next http.Handler) http.Handler {
+	protection := http.NewCrossOriginProtection()
+	protection.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, http.StatusForbidden, "cross-origin request refused")
+	}))
+	return protection.Handler(next)
+}
+
+// requireJSONBody is §10.2's second CSRF rule: a mutating request that
+// carries a body must say application/json, which an HTML form cannot
+// produce. Bodyless mutations — /done, /undone, DELETE, the push test —
+// are exempt, so their curl invocations stay bare; sameOriginOnly is what
+// covers them in a browser. /logout is exempt outright: the worst a
+// forged form gets there is logging you out of your own browser.
 func requireJSONBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if mutating(r.Method) && r.ContentLength != 0 && r.URL.Path != "/logout" {

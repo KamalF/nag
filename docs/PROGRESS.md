@@ -115,10 +115,7 @@ refusal, and that shoutrrr v0.21.2 panics on a generic URL whose query does
 not parse. Both are fixed.
 
 **Open questions for the owner** (spec decisions, not implemented):
-1. §10.2's bodyless-mutation exemption leans on `SameSite=Lax`, which does
-   not stop a page on a sibling subdomain (same site) from auto-submitting
-   an empty form to `/done`, `/undone` or `/api/push/test`.
-2. A channel endpoint can stream an unbounded response body into
+1. A channel endpoint can stream an unbounded response body into
    shoutrrr's own `io.ReadAll`; bounding it means wrapping each service's
    transport, which breaks the services that configure their own client.
 
@@ -164,4 +161,5 @@ one-step-one-commit index.
 | `2b7ace3` | second post-M4 review: serve — force-close after the shutdown grace |
 | `3cbf64b` | second post-M4 review: web — editor saves, picker Enter, zone focus; `/simplify` |
 | `f069b6d` | this file: the second post-M4 review |
-| (this commit) | §7.4 mask: no path, host only when dotted — gotify/ifttt/wecom secrets no longer printed (owner decision) |
+| `d478630` | §7.4 mask: no path, host only when dotted — gotify/ifttt/wecom secrets no longer printed (owner decision) |
+| (this commit) | §10.2 same-origin rule via `http.CrossOriginProtection` — closes the sibling-subdomain CSRF case (owner decision) |

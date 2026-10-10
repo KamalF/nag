@@ -38,6 +38,43 @@ func TestSecurityHeadersOnEveryResponse(t *testing.T) {
 	}
 }
 
+// §10.2: a browser mutation from another origin is refused, a sibling
+// subdomain included (same site, so SameSite=Lax would send the cookie);
+// a same-origin one, or one with no browser headers at all (curl), passes.
+func TestCrossOriginMutationsRefused(t *testing.T) {
+	h := testServer(t, nil).Handler()
+	created := createReminder(t, h, `{"text":"x","preset":"30min"}`)
+	done := fmt.Sprintf("/api/reminders/%d/done", int64(created["id"].(float64)))
+
+	send := func(method, path string, headers map[string]string) int {
+		req := authedRequest(method, path)
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	for _, headers := range []map[string]string{
+		{"Sec-Fetch-Site": "same-site"},
+		{"Sec-Fetch-Site": "cross-site"},
+		{"Origin": "https://blog.example.com"}, // a browser too old for Sec-Fetch-Site
+	} {
+		if code := send(http.MethodPost, done, headers); code != http.StatusForbidden {
+			t.Errorf("POST /done with %v = %d, want 403", headers, code)
+		}
+	}
+	if code := send(http.MethodGet, "/api/state", map[string]string{"Sec-Fetch-Site": "cross-site"}); code != http.StatusOK {
+		t.Errorf("cross-site GET = %d, want 200: reads are not mutations", code)
+	}
+	if code := send(http.MethodPost, done, map[string]string{"Sec-Fetch-Site": "same-origin"}); code != http.StatusOK {
+		t.Errorf("same-origin POST /done = %d, want 200", code)
+	}
+	if code := send(http.MethodPost, done, nil); code != http.StatusOK {
+		t.Errorf("POST /done with no browser headers (curl) = %d, want 200", code)
+	}
+}
+
 func authedRequest(method, path string) *http.Request {
 	req := httptest.NewRequest(method, path, nil)
 	req.Header.Set("Authorization", "Bearer "+testToken)
