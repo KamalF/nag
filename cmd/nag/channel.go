@@ -25,6 +25,7 @@ const channelUsage = `usage: nag channel add <name> <shoutrrr-url>
        nag channel rm <name>
        nag channel enable <name>
        nag channel disable <name>
+       nag channel test <name>
 `
 
 // runChannel is `nag channel …` (§7.4). The final image has no shell and no
@@ -39,7 +40,7 @@ func runChannel(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	verb, rest := args[0], args[1:]
-	want := map[string]int{"add": 2, "list": 0, "rm": 1, "enable": 1, "disable": 1}
+	want := map[string]int{"add": 2, "list": 0, "rm": 1, "enable": 1, "disable": 1, "test": 1}
 	n, known := want[verb]
 	if !known || len(rest) != n {
 		fmt.Fprint(stderr, channelUsage)
@@ -63,6 +64,8 @@ func runChannel(args []string, stdout, stderr io.Writer) int {
 		err = channelRemove(ctx, st, rest[0], stdout)
 	case "enable", "disable":
 		err = channelSetEnabled(ctx, st, rest[0], verb == "enable", stdout)
+	case "test":
+		err = channelTest(ctx, st, rest[0], stdout)
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", describeChannelError(err))
@@ -156,6 +159,39 @@ func channelSetEnabled(ctx context.Context, st *store.Store, name string, enable
 		state = "disabled"
 	}
 	fmt.Fprintf(stdout, "%s %s\n", name, state)
+	return nil
+}
+
+// testMessage is what `nag channel test` sends (§7.4).
+const testMessage = "Nag test notification"
+
+// errTestFailed makes a failed test exit 1 after its line is printed.
+var errTestFailed = errors.New("the test send failed")
+
+// channelTest is the fan-out counterpart of POST /api/push/test: the "did
+// that work" answer at the moment you paste a URL, not when a reminder
+// fires. It sends to a disabled channel too — the question is the URL, not
+// the mute — and says so. It uses the sweep's 10-second wrapper and
+// classification, so the word it prints on a dead host is the word a
+// delivery_error would have held; nothing here holds a WriteTimeout open,
+// so there is no shorter budget (§7.4).
+func channelTest(ctx context.Context, st *store.Store, name string, stdout io.Writer) error {
+	c, err := st.ChannelByName(ctx, name)
+	if errors.Is(err, store.ErrNoSuchChannel) {
+		return fmt.Errorf("no channel named %q", name)
+	}
+	if err != nil {
+		return err
+	}
+	note := ""
+	if !c.Enabled {
+		note = " (disabled — sent anyway; reminders skip it)"
+	}
+	if verdict := notify.SendChannel(ctx, c.URL, testMessage); verdict != "" {
+		fmt.Fprintf(stdout, "%s: %s%s\n", name, verdict, note)
+		return errTestFailed
+	}
+	fmt.Fprintf(stdout, "%s: sent%s\n", name, note)
 	return nil
 }
 

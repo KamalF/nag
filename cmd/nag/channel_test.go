@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -162,5 +165,40 @@ func TestChannelUsage(t *testing.T) {
 		if code, _, _ := cli.run(args...); code != 2 {
 			t.Errorf("channel %v = %d, want 2", args, code)
 		}
+	}
+}
+
+// §7.4: test sends now, to a disabled channel too, and prints the same
+// classification a delivery_error would hold.
+func TestChannelTest(t *testing.T) {
+	var got string
+	ok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		got = string(b)
+	}))
+	defer ok.Close()
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer down.Close()
+
+	cli := newChannelCLI(t)
+	cli.run("add", "hook", "generic+"+ok.URL+"/x")
+	cli.run("disable", "hook")
+	code, out, _ := cli.run("test", "hook")
+	if code != 0 || !strings.Contains(out, "hook: sent") || !strings.Contains(out, "disabled") {
+		t.Errorf("test = %d, %q", code, out)
+	}
+	if !strings.Contains(got, "Nag test notification") {
+		t.Errorf("server got %q", got)
+	}
+
+	cli.run("add", "down", "generic+"+down.URL+"/x?token=secret")
+	code, out, _ = cli.run("test", "down")
+	if code != 1 || !strings.HasPrefix(out, "down: ") || strings.Contains(out, "secret") {
+		t.Errorf("failed test = %d, %q", code, out)
+	}
+	if code, _, stderr := cli.run("test", "nope"); code != 1 || !strings.Contains(stderr, "no channel") {
+		t.Errorf("unknown channel = %d, %q", code, stderr)
 	}
 }

@@ -82,8 +82,8 @@ claim going out as `mailto:mailto:…`.
 
 | | # | Step | Commit |
 |---|---|---|---|
-| [x] | 40 | `nag channel` subcommand | |
-| [ ] | 41 | shoutrrr wrapper, classification, `nag channel test` | |
+| [x] | 40 | `nag channel` subcommand | `ab90a8b` |
+| [x] | 41 | shoutrrr wrapper, classification, `nag channel test` | |
 | [ ] | 42 | Sweep phase 3: fan-out | |
 | [ ] | 43 | `delivery_error` surfacing | |
 | [ ] | 44 | Sweep phase 4: retention purge | |
