@@ -63,7 +63,7 @@ a security one per round. Accepted blocker/should-fix by round: 3, 3, 0,
 then a `/simplify` pass, then 1, 0. The one blocker was the VAPID `sub`
 claim going out as `mailto:mailto:…`.
 
-## M3 — design (in progress)
+## M3 — design (code complete; phone pass outstanding)
 
 | | # | Step | Commit |
 |---|---|---|---|
@@ -75,8 +75,8 @@ claim going out as `mailto:mailto:…`.
 | [x] | 35 | Markdown link rendering (client) | `5c0cf13` |
 | [x] | 36 | Picker sheet | `dac3e93` |
 | [x] | 37 | Channel selector | `8270579` |
-| [x] | 38 | Toasts, undo, failure states | |
-| [ ] | 39 | **M3 checkpoint** (no commit) | |
+| [x] | 38 | Toasts, undo, failure states | `5925c71` |
+| [~] | 39 | **M3 checkpoint** (no commit) | desktop verified 2026-10-10 against both mockups, light and dark, in headless Chromium; link renders in the row, flattens in the payload, raw in the editor. Phone half waits on 28 |
 
 ## M4 — ship
 
