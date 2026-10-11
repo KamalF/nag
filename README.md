@@ -4,24 +4,39 @@ A personal, self-hosted reminder app. Type a note, tap when it should come
 back, and get an OS notification at that time. The reminder then stays in
 "Needs you now" until you clear it — dismissing the notification does not.
 
-One user, one instance. A single Go binary with SQLite, served behind Caddy.
-[SPEC.md](SPEC.md) is the full specification.
+One user, one instance. A single Go binary with SQLite, shipped as a
+container image. [SPEC.md](SPEC.md) is the full specification.
 
 ## Before you start
 
-You need Docker with Compose, and a [caddy-docker-proxy] instance on the same
-host. Every `docker compose` command below needs the external `caddy` network
-to exist, including the setup commands, because `compose.yaml` declares it
-`external: true` and Compose will not create it. If the proxy is not running
-yet, create the network first:
+You need Docker with Compose, a domain name, and an HTTPS reverse proxy on
+the same host. HTTPS is mandatory: service workers and Web Push do not work
+over plain HTTP.
+
+`compose.yaml` publishes nag on `127.0.0.1:8080` only, so it is reachable
+from the host and nowhere else. Point your proxy at that address. With
+[Caddy], the whole site block is:
 
 ```
-docker network create caddy
+nag.example.com {
+    reverse_proxy 127.0.0.1:8080
+}
 ```
 
-Edit the `caddy:` label in `compose.yaml` to your own domain. HTTPS is
-mandatory: service workers and Web Push do not work over plain HTTP.
+Any other proxy works the same way. It must pass the original `Host`
+header through; Caddy does by default, and with nginx add
+`proxy_set_header Host $host;`.
 
+If you run [caddy-docker-proxy], read
+[With caddy-docker-proxy](#with-caddy-docker-proxy) before the setup
+commands.
+
+You need two files from this repository, `compose.yaml` and
+`nag.env.example`, in one directory. A clone is the simplest way to get
+them. The image comes from `ghcr.io/kamalf/nag`; see
+[Building](#building) to build it yourself.
+
+[Caddy]: https://caddyserver.com/
 [caddy-docker-proxy]: https://github.com/lucaslorentz/caddy-docker-proxy
 
 ## Setup
@@ -67,6 +82,28 @@ On iPhone, Web Push only works from a Home Screen app: open the site in
 Safari, then Share → Add to Home Screen. The installed app has its own
 cookie storage, separate from Safari's, so you type the token once more
 inside it. That is expected, not a broken login.
+
+## With caddy-docker-proxy
+
+`compose.caddy-docker-proxy.yaml` adds the external `caddy` network and the
+proxy labels on top of `compose.yaml`. Turn it on once, before the setup
+commands, with a `.env` file next to `compose.yaml` (not `nag.env`):
+
+```
+echo 'COMPOSE_FILE=compose.yaml:compose.caddy-docker-proxy.yaml' > .env
+```
+
+Then edit the `caddy:` label in `compose.caddy-docker-proxy.yaml` to your
+own domain. Every command in this README stays the same.
+
+With the file on, every `docker compose` command needs the `caddy` network
+to exist, including the setup commands, because it is declared
+`external: true` and Compose will not create it. If the proxy is not
+running yet, create the network first:
+
+```
+docker network create caddy
+```
 
 ## Configuration
 
@@ -135,27 +172,31 @@ A clean stop folds the WAL back into `nag.db` and removes the `-wal` and
 from your own backup tooling. Keep `data/` on a local
 disk: WAL does not work reliably on a network filesystem.
 
-## Building
-
-The setup commands build the image implicitly, without a version. To stamp
-one, build explicitly:
+## Updating
 
 ```
-docker compose build --build-arg VERSION=$(git describe --tags --always --dirty)
-```
-
-`docker compose run --rm nag version` prints the version, and the boot log
-names it. A version of `dev` means the image was built without that
-argument.
-
-To update, rebuild before restarting — `up -d` reuses an existing
-`nag:latest` and would restart the old binary:
-
-```
-git pull
-docker compose build --build-arg VERSION=$(git describe --tags --always --dirty)
+docker compose pull
 docker compose up -d
 ```
+
+`up -d` alone reuses the image already on the host. `docker compose run
+--rm nag version` prints the running version, and the boot log names it.
+
+## Building
+
+Release images are built by GitHub Actions: pushing a tag such as `v0.2.0`
+publishes `ghcr.io/kamalf/nag:0.2.0` and `:latest` for amd64 and arm64.
+
+To build from a clone instead:
+
+```
+docker compose build --build-arg VERSION=$(git describe --tags --always --dirty)
+```
+
+The local build takes the same `ghcr.io/kamalf/nag:latest` name, so the
+next `docker compose pull` replaces it with the released image. A version
+of `dev` means the image was built without the `VERSION` argument. If the
+image cannot be pulled, Compose builds it from the clone on first use.
 
 Local development uses the Go version pinned in `mise.toml`:
 `go test ./...` runs every test. The frontend has no build step and no

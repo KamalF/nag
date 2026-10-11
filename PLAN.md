@@ -46,8 +46,8 @@ Resolved or owned preparation items, so the commits can assume them:
   where a service offers it and the injected client elsewhere, but keep the
   goroutine+`select` wrapper as the actual guarantee — §7.2 is explicit that the
   bound must never depend on the library.
-- **VPS prerequisites** — a box with caddy-docker-proxy, the external `caddy`
-  network, and a DNS record must exist **by step 28 (M2's device testing)**, not
+- **VPS prerequisites** — a box with an HTTPS reverse proxy (any proxy, or
+  caddy-docker-proxy with its external `caddy` network — ADR-003), and a DNS record must exist **by step 28 (M2's device testing)**, not
   M4: phones cannot reach `localhost`, and Web Push needs real HTTPS.
 - **Icon assets** — the four PNGs (32, 192, 512, 512-maskable) need a design
   source; produce them before commit 23, which is otherwise blocked on a non-code
@@ -314,12 +314,12 @@ drawn onto commit 23's `32.png`) + title prefix from a constant base;
 token-read.
 
 ### 28. 📱 Dev deployment on the VPS (no commit — infrastructure)
-Deploy the current build to the VPS behind caddy-docker-proxy over real HTTPS so
+Deploy the current build to the VPS behind its HTTPS reverse proxy so
 devices can reach it. The M4 Dockerfile doesn't exist yet — this is a throwaway
 dev deployment (a trivial dev container or the bare `CGO_ENABLED=0` binary behind
 Caddy), and nothing about it is a deliverable; the production packaging is
 commits 48–49 and gets its own acceptance at step 50. Prerequisites are the
-pre-flight VPS items (caddy network, DNS).
+pre-flight VPS items (proxy, DNS).
 Then the **device pass**, per §7.1's platform table:
 - **Android** (Chrome and/or Firefox): subscribe from a normal tab, close the
   tab, receive an OS notification at the due time, click → app focuses and the
@@ -505,14 +505,17 @@ explicit host.
 ### 48. Dockerfile, .dockerignore, compose
 §10: the multi-stage build as specified (including the `/empty` → `/` tmp trick
 and its ownership), `.dockerignore` with the required exclusions, `compose.yaml`
-with the caddy labels and external network. The Go image version follows the
+publishing on loopback for any proxy, and `compose.caddy-docker-proxy.yaml` with
+the caddy labels and external network (ADR-003, which also adds the GHCR release
+workflow). The Go image version follows the
 pre-flight decision, not the spec's literal `1.24`.
 **Review:** against §10's files nearly line by line; `.dockerignore` covers
 `nag.env`, `data/`, the mockups.
 
 ### 49. `nag.env.example` and README
 The comments-only env example (§5.2), README with the four setup commands, the
-caddy-network prerequisite, ownership and backup notes (§10.1, §10.3), and the
+generic proxy setup first and the caddy-docker-proxy add-on and its
+caddy-network prerequisite after it, ownership and backup notes (§10.1, §10.3), and the
 one iOS install line §11 requires.
 **Review:** the env example declares no variables; the four commands verbatim,
 `-T` included and explained.

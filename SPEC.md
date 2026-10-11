@@ -42,7 +42,7 @@ Single user. Single instance. No multi-tenancy, no accounts, no sync protocol.
 | Frontend | No build step. Hand-written HTML/CSS/JS, `//go:embed`'d. Every file served as-is — no templating, no server-side rendering |
 | Fonts | **System stacks only, no webfonts** — nothing is downloaded, nothing is embedded (§9.1) |
 | Router | stdlib `net/http.ServeMux` (Go 1.22+ pattern matching) |
-| Reverse proxy | Caddy via caddy-docker-proxy labels |
+| Reverse proxy | Any HTTPS proxy on the host, in front of `127.0.0.1:8080`; caddy-docker-proxy labels as an opt-in Compose file (§10) |
 
 HTTPS is mandatory — service workers and Web Push do not work over plain HTTP.
 
@@ -72,6 +72,8 @@ nag.env.example
 Dockerfile
 .dockerignore               # not optional — see §10
 compose.yaml
+compose.caddy-docker-proxy.yaml   # opt-in add-on — see §10
+.github/workflows/release.yml     # tag → GHCR image — see §10
 README.md
 reminder-theme-preview.html    # design reference only — §9.1's tokens and layout
 reminder-datetime-picker.html  # design reference only — §9.6's sheet
@@ -257,7 +259,7 @@ docker compose run --rm -T nag genkeys >> nag.env
 
 `genkeys` touches neither directory, so the order of the two pairs doesn't matter — but `up -d` needs all four, followed by the one hand edit: replace `mailto:you@example.com` in `nag.env`. Four commands and one edit, and the app names the edit if you skip it.
 
-**Every `docker compose` command in this file needs the `caddy` network to already exist** — the `genkeys` line above, `config check` (§5.5), `channel add` (§7.4), and `up -d` alike. `compose.yaml` declares that network as `external: true` (§10), and `docker compose run` fails hard on a missing external network rather than creating one, so on a box that is not already running caddy-docker-proxy the fourth command fails before it can write a byte. Bring the proxy up first, or `docker network create caddy` if you are setting this up ahead of it. It is the one prerequisite that is not itself one of the four, which is exactly why it is easy to leave out of a README.
+**With the caddy-docker-proxy add-on on (§10), every `docker compose` command needs the `caddy` network to already exist** — the `genkeys` line above, `config check` (§5.5), `channel add` (§7.4), and `up -d` alike. The add-on declares that network as `external: true`, and `docker compose run` fails hard on a missing external network rather than creating one, so on a box that is not already running caddy-docker-proxy the fourth command fails before it can write a byte. Bring the proxy up first, or `docker network create caddy` if you are setting this up ahead of it. It is the one prerequisite that is not itself one of the four, which is exactly why it is easy to leave out of a README. The base `compose.yaml` declares no external network, so without the add-on the four commands need nothing beyond Docker.
 
 **`nag.env.example` is comments only — every line starts with `#`, and it declares no variables at all.** It exists to be copied and then appended to, and a template carrying `NAG_TOKEN=` with an empty value would leave the finished file holding *two* of every key: the empty one from the template and the real one from `genkeys`. Compose resolves that by taking the last occurrence, so it happens to work — and the one hand edit §5.1 makes unmissable then has two candidate lines, of which editing the wrong one silently does nothing. A commented template cannot produce that. It documents each variable, its default, and which of them are required — `NAG_DB` and `NAG_ADDR` are described in there too, and telling those apart from the four that are mandatory is what that line is for; `genkeys` appends the four real lines below it.
 
@@ -630,7 +632,7 @@ JSON. `/api/*` is the only authenticated surface.
 - `mac = HMAC-SHA256(key: k, message: "v1|" + exp)` over that same decimal string, byte for byte.
 - `k = HMAC-SHA256(key: NAG_TOKEN, message: "nag-cookie-v1")` — the token is the key, the constant is the message. No second secret to manage, and **rotating `NAG_TOKEN` invalidates every cookie**, which is the log-out-everywhere lever.
 - Attributes: `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, `Max-Age` 365 days.
-- **`Secure` is set unconditionally.** Behind Caddy the app sees plain HTTP, so deriving it from `r.TLS != nil` would silently ship a non-Secure cookie. Never do that.
+- **`Secure` is set unconditionally.** Behind the reverse proxy the app sees plain HTTP, so deriving it from `r.TLS != nil` would silently ship a non-Secure cookie. Never do that.
 - `SameSite=Lax`, not `Strict`, so following a notification click into a fresh tab arrives authenticated.
 - **Sliding renewal**: a valid cookie older than 30 days is re-issued on the way out, so a pinned tab never logs out. The cookie carries only its expiry, so "older than 30 days" is computed as `expiry - now < maxAge - 30d` — write `maxAge` as the one constant both the issuer and this check read, because hardcoding `335` here breaks silently the day `Max-Age` changes.
 - Verify with `hmac.Equal`; reject when `expiry < now`.
@@ -1021,13 +1023,14 @@ The picker's relative line uses the future rows above verbatim, and replaces the
 Multi-stage build, `FROM scratch` final image. Copy `ca-certificates.crt` from the builder — both Web Push and shoutrrr make outbound TLS calls.
 
 ```dockerfile
-FROM golang:1.24 AS build
+FROM --platform=$BUILDPLATFORM golang:1.24 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -trimpath \
+ARG TARGETOS TARGETARCH
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
       -ldflags="-s -w -X main.version=${VERSION}" -o /nag ./cmd/nag
 RUN mkdir -p /empty/tmp && chmod 1777 /empty/tmp
 
@@ -1049,18 +1052,31 @@ No `VOLUME` declaration: the mount points are bind mounts declared in compose, a
 
 **`.dockerignore` is required, not hygiene.** The build context is the project directory, which is also where §10.1 tells you to put `data/` and §5.2 tells you to put `nag.env` — so a bare `COPY . .` sends your VAPID private key and your database into the build and bakes them into the cached builder layer. The final image is `FROM scratch` and carries neither, which is exactly what makes it easy to miss. Exclude at least `data/`, `config/`, `nag.env`, `.git/`, `*.md`, and the two root `reminder-*.html` mockups — they are design references that nothing embeds (§3), so they are context the build has no use for; the build needs `go.mod`, `go.sum`, `cmd/`, `internal/`, and `web/`.
 
+The builder stage runs on the build host's platform and cross-compiles to the target's, so a multi-arch build needs no emulation: the final stage has no `RUN`, and the CA bundle and `/empty` it copies are the same bytes on every architecture.
+
 ```yaml
 services:
   nag:
+    image: ghcr.io/kamalf/nag:latest
     build: .
-    image: nag:latest
     volumes:
       - ./data:/data
       - ./config:/config
     env_file: ./nag.env
-    networks: [caddy]
+    ports:
+      - "127.0.0.1:8080:8080"
     restart: unless-stopped
     mem_limit: 256m   # a ceiling for a runaway channel reply (§7.2)
+```
+
+**`compose.yaml` assumes no particular reverse proxy.** It publishes the port on loopback only, so the app is reachable from the host's own HTTPS proxy and from nowhere else — never plain HTTP from the internet. Whatever proxy that is must forward the original `Host` header: §10.2's same-origin rule falls back to comparing `Origin` with `Host` for a browser that sends no `Sec-Fetch-Site`, and a proxy that rewrites `Host` to `127.0.0.1:8080` turns that fallback into a `403` on every mutation.
+
+**caddy-docker-proxy is an opt-in second file**, `compose.caddy-docker-proxy.yaml`, layered on the first:
+
+```yaml
+services:
+  nag:
+    networks: [caddy]
     labels:
       caddy: nag.example.com
       caddy.reverse_proxy: "{{upstreams 8080}}"
@@ -1069,6 +1085,10 @@ networks:
   caddy:
     external: true
 ```
+
+It is enabled once per host with `COMPOSE_FILE=compose.yaml:compose.caddy-docker-proxy.yaml` in `.env` — Compose's own project file, not `nag.env` — so every documented command stays a plain `docker compose …` on both kinds of host. A layered file rather than a full second copy: the service is defined once, and an edit to it cannot drift between two files. The loopback port stays published under the add-on; it is unused there and harmless. `.env` is per-host, so `.gitignore` and `.dockerignore` both name it.
+
+**The image is published to GHCR** as `ghcr.io/kamalf/nag`. Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds `linux/amd64` and `linux/arm64` with `VERSION` set to the tag and pushes `:<version>` and `:latest`, logging in with the workflow's own `GITHUB_TOKEN` — no secret to create. `compose.yaml` names both `image:` and `build: .`: Compose pulls the image when it is missing and falls back to building the checkout when the pull fails, and `docker compose build` builds it locally under the same name. Updating is `docker compose pull` then `up -d`; `up -d` alone reuses whatever image is already on the host.
 
 ### 10.1 Scratch-image consequences
 
@@ -1113,7 +1133,7 @@ CSRF needs no token. Two rules, both on every mutating request. **First, a brows
 
 The DB is the only copy of everything. **With WAL on, copying `nag.db` alone can yield a corrupt file** — the recent writes live in `-wal`. Either stop the container and copy `data/nag.db*` — a clean stop (§10.1) checkpoints the WAL into `nag.db` and removes `-wal` and `-shm`, so after it `nag.db` alone is complete and the glob copies whatever exists — or add whatever backup path you prefer around `VACUUM INTO`. Keep `./data` on local disk: WAL misbehaves on network filesystems, so a bind mount pointing at NFS is the one way to break this.
 
-Other gotchas: the container must join the network caddy-docker-proxy watches or the labels are silently ignored.
+Other gotchas: with the caddy-docker-proxy add-on, the container must join the network caddy-docker-proxy watches or the labels are silently ignored.
 
 ### 10.4 What gets logged
 
@@ -1148,7 +1168,7 @@ Both themes with the §9.1 tokens and system font stacks, Patina layout, mobile 
 *Done when:* it matches the two reference mockups on desktop and phone, and a reminder containing `[label](https://…)` renders one clickable link in the row, plain text in the notification, and raw markdown in the edit field.
 
 **M4 — ship**
-`nag channel` subcommand including `test` and the slug rule, shoutrrr fan-out, `delivery_error` classification and surfacing — with a test that a failure against a URL carrying a token stores neither the URL nor the token — retention purge, SIGHUP reload, security headers, graceful shutdown, `nag healthcheck`, `nag version`, Dockerfile + compose + caddy labels, `nag.env.example`, README including the ownership and backup notes, the caddy-network prerequisite (§5.2), and **one line about the iOS install**: a Home Screen web app has its own storage and cookie partition, separate from Safari's, so the `nag_session` cookie earned in Safari does not travel into the installed app and the token has to be typed once more inside it (§8.1). That is expected rather than a bug, and it is worth a line because the installed app is not optional on iPhone — it is the only path to Web Push there (§7.1), so every iOS user hits it exactly once and would otherwise read it as a broken login.
+`nag channel` subcommand including `test` and the slug rule, shoutrrr fan-out, `delivery_error` classification and surfacing — with a test that a failure against a URL carrying a token stores neither the URL nor the token — retention purge, SIGHUP reload, security headers, graceful shutdown, `nag healthcheck`, `nag version`, Dockerfile + a proxy-agnostic compose + the caddy-docker-proxy add-on + the GHCR release workflow (§10), `nag.env.example`, README including the ownership and backup notes, the add-on's caddy-network prerequisite (§5.2), and **one line about the iOS install**: a Home Screen web app has its own storage and cookie partition, separate from Safari's, so the `nag_session` cookie earned in Safari does not travel into the installed app and the token has to be typed once more inside it (§8.1). That is expected rather than a bug, and it is worth a line because the installed app is not optional on iPhone — it is the only path to Web Push there (§7.1), so every iOS user hits it exactly once and would otherwise read it as a broken login.
 *Done when:* on the VPS, from an empty checkout, the four setup commands of §5.2 followed by `docker compose up -d` produce an instance that writes a default config, serves over HTTPS, and refuses to start with the keys removed; and `docker compose kill -s HUP nag` reloads an edited preset list without dropping a request.
 Phase 3 finishes the §7.6 checklist M2 started, at the same sweep level and against the same fake clock, now with a fake sender standing in for the router: a row 31 minutes late at mark time is **never fanned out** either, not merely never pushed; fan-out fires in the same tick even when that tick's push is held; a phase 3 that exceeds its deadline drops the remaining rows, logs their ids, and does not delay the next tick's push; a phase 3 whose deadline expires *inside* a row carrying many unreachable channels still returns at ~20 s, because every send is bounded by the budget rather than by its own full 10 s — including the shoutrrr sends the wrapper has to abandon to achieve that (§7.2, §7.3); and a tick whose phase 2 spent 30 seconds on unreachable subscriptions still attempts its fan-out, because the deadline is measured from the start of phase 3 (§7.3).
 The two config hashes need tests of their own (§5.5), because the failure mode is silent in both directions: a reload that changes only a preset's `offset` **is applied** — the next tap of that chip lands at the new duration — while `config_version` does **not** move; a reload that renames a `label` moves it; a reload of a byte-identical file moves nothing and logs `config unchanged`; and a reload that fails validation leaves both the running config and the counter untouched. Also: a config that is present but invalid at boot exits `1` and does not overwrite the file (§5.3).
@@ -1192,7 +1212,7 @@ Later, explicitly deferred: notification action buttons (Snooze / Clear from the
 | Secrets in env, behaviour in TOML | The TOML lives in a mounted directory and gets edited; keys must not |
 | Channels via subcommand, not API or TOML | Their URLs are secrets, and `FROM scratch` leaves no shell to hand-edit the table with |
 | Cookie key derived from `NAG_TOKEN` | One secret to manage instead of two, and rotating the token becomes log-out-everywhere for free |
-| `Secure` cookie unconditionally | Behind Caddy the app sees plain HTTP; deriving it from `r.TLS` ships an insecure cookie and looks correct |
+| `Secure` cookie unconditionally | Behind the reverse proxy the app sees plain HTTP; deriving it from `r.TLS` ships an insecure cookie and looks correct |
 | Theme follows the OS, with no override | A media query and nothing else — no persistence, no first-paint flash, no per-device drift. The OS already knows |
 | No client-side persistence at all | No cookie for preferences, no localStorage; the server or the OS holds every piece of state, so behaviour is identical in every context |
 | Server clock for skew, browser for timezone | Correcting a wrong clock is cheap and keeps the badge honest; re-rendering the server's wall clock to someone in another country is worse than showing them their own |

@@ -2,6 +2,7 @@
 # which also holds nag.env (the VAPID private key) and data/ (the database).
 # A bare COPY . . would bake both into the cached builder layer.
 nag.env
+.env
 data/
 config/
 *.db*

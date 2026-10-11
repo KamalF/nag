@@ -1,4 +1,5 @@
 nag.env
+.env
 /data/
 /config/
 *.db*
