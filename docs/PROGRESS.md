@@ -168,4 +168,5 @@ one-step-one-commit index.
 | `5a346fe` | §7.1 push sends reach public addresses only, no redirects — closes the subscribe SSRF follow-up (owner decision) |
 | `0d48c8c` | `/review-loop` over the four decisions (4 rounds + simplify, converged) — §7.4 mask is the scheme only (pushbullet's `o.…` host token has a dot; owner decision); push client cloned from `DefaultTransport`, its wiring and no-proxy rule tested; cross-origin 403 carries `no-store`; SPEC §7.2/§7.4/§10.2 wording |
 | `b0133e3` | §7.1 `RecordSize: 3070` — webpush-go padded every push to 4096 bytes, which Mozilla refuses with a 413 once base64 encoded, so Firefox got no notification (found on the VPS) |
-| (this commit) | §9.9 mobile: a row's actions may shrink and wrap — an overdue row's five buttons ran off a phone screen (found on the VPS) |
+| `c19324a` | §9.9 mobile: a row's actions may shrink and wrap — an overdue row's five buttons ran off a phone screen (found on the VPS) |
+| (this commit) | GHCR release workflow (`v*` tag → amd64 + arm64 images); the Dockerfile cross-compiles instead of emulating (ADR-003, next commit) |
