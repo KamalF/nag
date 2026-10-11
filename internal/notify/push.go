@@ -31,6 +31,14 @@ type PushSender struct {
 	sendFn func(ctx context.Context, payload []byte, sub *webpush.Subscription, opts *webpush.Options) (*http.Response, error)
 }
 
+// recordSize is the encrypted body's exact length: webpush-go pads every
+// push up to its record size, 4096 bytes by default. Mozilla's push service
+// caps the body at 4096 bytes after base64 encoding, so the default is
+// refused with a 413 on every send. 3070 bytes encode to 4096. They leave
+// 2967 bytes of plaintext, more than §8.3's 1000-byte text can grow to
+// even with every byte JSON-escaped.
+const recordSize = 3070
+
 func NewPushSender(st *store.Store, log *slog.Logger, vapidPublic, vapidPrivate, subject string) *PushSender {
 	return &PushSender{
 		store:        st,
@@ -137,6 +145,7 @@ func (p *PushSender) SendTo(ctx context.Context, perSend time.Duration, payload 
 		VAPIDPublicKey:  p.vapidPublic,
 		VAPIDPrivateKey: p.vapidPrivate,
 		Urgency:         webpush.UrgencyHigh,
+		RecordSize:      recordSize,
 		Topic:           "nag",      // constant: at most one push ever pending per device (§7.1)
 		HTTPClient:      pushClient, // without it, webpush-go uses a bare http.Client
 	})

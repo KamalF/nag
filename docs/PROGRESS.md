@@ -166,4 +166,5 @@ one-step-one-commit index.
 | `cc146d4` | §10.2 same-origin rule via `http.CrossOriginProtection` — closes the sibling-subdomain CSRF case (owner decision) |
 | `4ddab42` | §7.2 channel endpoints trusted; `mem_limit: 256m` bounds a runaway reply (owner decision) |
 | `5a346fe` | §7.1 push sends reach public addresses only, no redirects — closes the subscribe SSRF follow-up (owner decision) |
-| (this commit) | `/review-loop` over the four decisions (4 rounds + simplify, converged) — §7.4 mask is the scheme only (pushbullet's `o.…` host token has a dot; owner decision); push client cloned from `DefaultTransport`, its wiring and no-proxy rule tested; cross-origin 403 carries `no-store`; SPEC §7.2/§7.4/§10.2 wording |
+| `0d48c8c` | `/review-loop` over the four decisions (4 rounds + simplify, converged) — §7.4 mask is the scheme only (pushbullet's `o.…` host token has a dot; owner decision); push client cloned from `DefaultTransport`, its wiring and no-proxy rule tested; cross-origin 403 carries `no-store`; SPEC §7.2/§7.4/§10.2 wording |
+| (this commit) | §7.1 `RecordSize: 3070` — webpush-go padded every push to 4096 bytes, which Mozilla refuses with a 413 once base64 encoded, so Firefox got no notification (found on the VPS) |

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -181,7 +182,7 @@ func TestSendToOptionsAndLogging(t *testing.T) {
 	}
 	p.SendTo(t.Context(), time.Second, []byte("{}"), theSubscription(t, st))
 
-	if gotOpts.TTL != 259200 || gotOpts.Topic != "nag" || gotOpts.Urgency != webpush.UrgencyHigh ||
+	if gotOpts.TTL != 259200 || gotOpts.Topic != "nag" || gotOpts.Urgency != webpush.UrgencyHigh || gotOpts.RecordSize != recordSize ||
 		gotOpts.Subscriber != "kamal@example.net" || gotOpts.VAPIDPublicKey != configuredKey {
 		t.Errorf("options = %+v, want the §7.1 pinned set", gotOpts)
 	}
@@ -241,6 +242,66 @@ func TestDeleteRespectsAnExpiredCallerBudget(t *testing.T) {
 	}
 }
 
+// browserSubscription is a subscription with real client keys, so a send
+// to it is encrypted the way a browser's would be.
+func browserSubscription(t *testing.T, endpoint, vapidPublic string) store.Subscription {
+	t.Helper()
+	client, err := ecdh.P256().GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authSecret := make([]byte, 16)
+	rand.Read(authSecret)
+	return store.Subscription{
+		Endpoint:    endpoint,
+		P256dh:      base64.RawURLEncoding.EncodeToString(client.PublicKey().Bytes()),
+		Auth:        base64.RawURLEncoding.EncodeToString(authSecret),
+		VAPIDPublic: vapidPublic,
+	}
+}
+
+// Mozilla's push service answers 413 to a body over 4096 bytes once base64
+// encoded, and webpush-go pads every body to the record size. So the
+// largest payload nag can build, a 1000-byte text of quotes that JSON
+// doubles, has to encrypt into a body that still fits.
+func TestLargestPayloadFitsMozillaLimit(t *testing.T) {
+	var bodyLen int
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		bodyLen = len(body)
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	private, public, err := webpush.GenerateVAPIDKeys()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(filepath.Join(t.TempDir(), "nag.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	payload, err := buildDigestPayload([]store.HeldRow{{
+		ID: math.MaxInt64, DueAt: math.MaxInt64, Text: strings.Repeat(`"`, 1000),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p := NewPushSender(st, slog.New(slog.NewTextHandler(io.Discard, nil)), public, private, "mailto:kamal@example.net")
+	p.sendFn = func(ctx context.Context, b []byte, s *webpush.Subscription, o *webpush.Options) (*http.Response, error) {
+		o.HTTPClient = srv.Client() // pushClient refuses loopback
+		return webpush.SendNotificationWithContext(ctx, b, s, o)
+	}
+	if res := p.SendTo(t.Context(), 5*time.Second, payload, browserSubscription(t, srv.URL+"/send/abc", public)); res.Err != "" {
+		t.Fatalf("send of a %d-byte payload failed: %+v", len(payload), res)
+	}
+	if encoded := base64.StdEncoding.EncodedLen(bodyLen); encoded > 4096 {
+		t.Errorf("body is %d bytes, %d once base64 encoded, want at most 4096", bodyLen, encoded)
+	}
+}
+
 // The claim that goes out, not the option handed to the library: webpush-go
 // adds its own "mailto:" to a non-https Subscriber, so the JWT's sub must be
 // read off a real request to know what a push service sees.
@@ -256,18 +317,7 @@ func TestVAPIDSubjectClaimIsOneMailto(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := ecdh.P256().GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	authSecret := make([]byte, 16)
-	rand.Read(authSecret)
-	sub := store.Subscription{
-		Endpoint:    srv.URL + "/send/abc",
-		P256dh:      base64.RawURLEncoding.EncodeToString(client.PublicKey().Bytes()),
-		Auth:        base64.RawURLEncoding.EncodeToString(authSecret),
-		VAPIDPublic: public,
-	}
+	sub := browserSubscription(t, srv.URL+"/send/abc", public)
 	st, err := store.Open(filepath.Join(t.TempDir(), "nag.db"))
 	if err != nil {
 		t.Fatal(err)
