@@ -33,11 +33,13 @@ type PushSender struct {
 
 // recordSize is the encrypted body's exact length: webpush-go pads every
 // push up to its record size, 4096 bytes by default. Mozilla's push service
-// caps the body at 4096 bytes after base64 encoding, so the default is
-// refused with a 413 on every send. 3070 bytes encode to 4096. They leave
-// 2967 bytes of plaintext, more than §8.3's 1000-byte text can grow to
-// even with every byte JSON-escaped.
-const recordSize = 3070
+// caps what it forwards at 4096 bytes, and for Firefox on Android (routed
+// through FCM) it counts the base64 body inside a JSON map that also holds
+// a channel id and the encoding, so even a 3070-byte record is refused with
+// a 413. 2560 bytes encode to 3416, which leaves 680 bytes for that map.
+// They hold 2457 bytes of plaintext, more than §8.3's 1000-byte text can
+// grow to even with every byte JSON-escaped.
+const recordSize = 2560
 
 func NewPushSender(st *store.Store, log *slog.Logger, vapidPublic, vapidPrivate, subject string) *PushSender {
 	return &PushSender{

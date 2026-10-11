@@ -260,10 +260,12 @@ func browserSubscription(t *testing.T, endpoint, vapidPublic string) store.Subsc
 	}
 }
 
-// Mozilla's push service answers 413 to a body over 4096 bytes once base64
-// encoded, and webpush-go pads every body to the record size. So the
-// largest payload nag can build, a 1000-byte text of quotes that JSON
-// doubles, has to encrypt into a body that still fits.
+// Mozilla's push service answers 413 when a push it forwards to FCM
+// (Firefox on Android) is over 4096 bytes, measured as the base64 body
+// inside a JSON map with a channel id, the encoding and a reliability id.
+// webpush-go pads every body to the record size, so the largest payload
+// nag can build, a 1000-byte text of quotes that JSON doubles, has to
+// encrypt into a body that leaves room for that map.
 func TestLargestPayloadFitsMozillaLimit(t *testing.T) {
 	var bodyLen int
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -297,8 +299,9 @@ func TestLargestPayloadFitsMozillaLimit(t *testing.T) {
 	if res := p.SendTo(t.Context(), 5*time.Second, payload, browserSubscription(t, srv.URL+"/send/abc", public)); res.Err != "" {
 		t.Fatalf("send of a %d-byte payload failed: %+v", len(payload), res)
 	}
-	if encoded := base64.StdEncoding.EncodedLen(bodyLen); encoded > 4096 {
-		t.Errorf("body is %d bytes, %d once base64 encoded, want at most 4096", bodyLen, encoded)
+	const fcmMapAllowance = 512 // {"chid":"<uuid>","body":…,"con":"aes128gcm","rid":…}
+	if encoded := base64.StdEncoding.EncodedLen(bodyLen); encoded > 4096-fcmMapAllowance {
+		t.Errorf("body is %d bytes, %d once base64 encoded, want at most %d", bodyLen, encoded, 4096-fcmMapAllowance)
 	}
 }
 

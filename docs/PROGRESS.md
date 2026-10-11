@@ -170,4 +170,5 @@ one-step-one-commit index.
 | `b0133e3` | §7.1 `RecordSize: 3070` — webpush-go padded every push to 4096 bytes, which Mozilla refuses with a 413 once base64 encoded, so Firefox got no notification (found on the VPS) |
 | `c19324a` | §9.9 mobile: a row's actions may shrink and wrap — an overdue row's five buttons ran off a phone screen (found on the VPS) |
 | `f6b98c1` | GHCR release workflow (`v*` tag → amd64 + arm64 images); the Dockerfile cross-compiles instead of emulating (ADR-003) |
-| (this commit) | ADR-003: `compose.yaml` proxy-agnostic on loopback, caddy-docker-proxy as the opt-in `compose.caddy-docker-proxy.yaml`, the GHCR image as compose's default; README, SPEC §3/§5.2/§10/§11 and PLAN follow (owner request) |
+| `8844e1d` | ADR-003: `compose.yaml` proxy-agnostic on loopback, caddy-docker-proxy as the opt-in `compose.caddy-docker-proxy.yaml`, the GHCR image as compose's default; README, SPEC §3/§5.2/§10/§11 and PLAN follow (owner request) |
+| (this commit) | §7.1 `RecordSize: 2560` — 3070 fixed desktop Firefox, but Mozilla still 413s Firefox Android: its FCM route measures the base64 body inside a JSON map against 4096 (found on the VPS) |
