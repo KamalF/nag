@@ -24,6 +24,36 @@ Nag has one user and runs one instance. It is a single Go binary with
 SQLite, shipped as a container image. [SPEC.md](SPEC.md) is the full
 specification.
 
+## Try it on your laptop
+
+You can try nag in Chrome or Firefox with Docker only. Browsers treat
+`localhost` as secure, so notifications work without HTTPS or a domain.
+
+```
+mkdir nag-try
+docker run --rm ghcr.io/kamalf/nag genkeys > nag-try/nag.env
+```
+
+In `nag-try/nag.env`, replace `mailto:you@example.com` with your own
+address. Then start nag:
+
+```
+docker run --rm -p 127.0.0.1:8080:8080 --env-file nag-try/nag.env \
+  --user "$(id -u):$(id -g)" -v "$PWD/nag-try:/data" \
+  -e NAG_CONFIG=/data/nag.toml ghcr.io/kamalf/nag
+```
+
+Open http://localhost:8080 and enter the value of `NAG_TOKEN` from
+`nag-try/nag.env`. Then click "Turn on notifications".
+
+- The database and the configuration are in `nag-try/`. To stop nag, press
+  Ctrl+C. The same command starts it again with your reminders.
+- The default timezone is `Europe/Paris`. To change it, edit `timezone` in
+  `nag-try/nag.toml`, then start nag again.
+- Notifications arrive only while nag runs. A phone cannot reach your
+  laptop, and Safari does not treat `localhost` as secure. For a phone,
+  install nag on a server as described below.
+
 ## Before you start
 
 You need Docker with Compose, a domain name, and an HTTPS reverse proxy on
