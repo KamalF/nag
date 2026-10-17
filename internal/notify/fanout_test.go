@@ -10,7 +10,7 @@ import (
 	"github.com/KamalF/nag/internal/store"
 )
 
-// The fan-out half of the §7.6 checklist, against the same fake
+// The fan-out half of the §7.6 table read as a checklist, against the same fake
 // clock as phase 2 and a fake channel sender standing in for the router.
 
 // fakeChannels records each send and answers per URL: a verdict, or a
@@ -75,8 +75,8 @@ func TestFanOutSendsTheFlattenedText(t *testing.T) {
 	}
 }
 
-// "A row 31 minutes late at mark time is never fanned out either, not
-// merely never pushed": the gate means no output at all.
+// A row 31 minutes late at mark time is never fanned out either, not
+// only never pushed: the gate means no output at all.
 func TestFanOutSkipsRowsPastTheGate(t *testing.T) {
 	f := newFixture(t)
 	fc := withChannels(t, f, "ntfy")
@@ -89,7 +89,7 @@ func TestFanOutSkipsRowsPastTheGate(t *testing.T) {
 	}
 }
 
-// "Fan-out fires in the same tick even when that tick's push is held."
+// Fan-out fires in the same tick even when the push of that tick is held.
 func TestFanOutIsNotHeldByTheCooldown(t *testing.T) {
 	f := newFixture(t)
 	f.subscribe("https://push.example/aaaaaaaa")
@@ -173,8 +173,8 @@ func (f *fixture) retime(r store.Reminder, offset int64) {
 	}
 }
 
-// "A phase 3 that exceeds its deadline drops the remaining rows, logs their
-// ids, and does not delay the next tick's push."
+// A phase 3 that exceeds its deadline drops the remaining rows, logs their
+// ids, and does not delay the push of the next tick.
 func TestFanOutDeadlineDropsRemainingRows(t *testing.T) {
 	f := newFixture(t)
 	f.subscribe("https://push.example/aaaaaaaa")
@@ -216,9 +216,9 @@ func TestFanOutDeadlineDropsRemainingRows(t *testing.T) {
 	}
 }
 
-// "A phase 3 whose deadline expires inside a row carrying many unreachable
-// channels still returns at ~the budget": every send is bounded by the
-// phase, not by its own full timeout.
+// A phase 3 whose deadline expires inside a row that carries many
+// unreachable channels still returns at about the budget. The phase bounds
+// every send, not the full timeout of that send.
 func TestFanOutDeadlineBoundsARowOfDeadChannels(t *testing.T) {
 	f := newFixture(t)
 	names := []string{"c01", "c02", "c03", "c04", "c05", "c06", "c07", "c08",
@@ -243,8 +243,8 @@ func TestFanOutDeadlineBoundsARowOfDeadChannels(t *testing.T) {
 	}
 }
 
-// "A tick whose phase 2 spent 30 seconds on unreachable subscriptions still
-// attempts its fan-out": the budget is measured from the start of phase 3.
+// A tick whose phase 2 spent 30 seconds on unreachable subscriptions still
+// attempts its fan-out, because the budget starts with phase 3.
 func TestFanOutBudgetStartsWithThePhase(t *testing.T) {
 	f := newFixture(t)
 	f.subscribe("https://push.example/aaaaaaaa")
@@ -332,7 +332,7 @@ func TestFanOutSkipsABusyChannel(t *testing.T) {
 
 // A channel-list edit while the send is in flight clears delivery_error
 // (§4.1). The verdict computed before the edit names a channel that the row
-// no longer carries, and it must not land on top.
+// no longer carries, and it must not overwrite the cleared column.
 func TestFanOutVerdictYieldsToAChannelEdit(t *testing.T) {
 	f := newFixture(t)
 	withChannels(t, f, "tg")
@@ -357,7 +357,8 @@ func TestFanOutVerdictYieldsToAChannelEdit(t *testing.T) {
 }
 
 // A re-time into the past, in the same second as phase 1, stamps
-// notified_at with that same now. The verdict must still yield to it (§4.1:
+// notified_at with that same now. The verdict must still not overwrite the
+// re-time (§4.1:
 // a re-time clears delivery_error).
 func TestFanOutVerdictYieldsToASameSecondRetime(t *testing.T) {
 	f := newFixture(t)

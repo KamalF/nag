@@ -44,8 +44,8 @@ func TestFlattenLinks(t *testing.T) {
 }
 
 // §9.10: the parser exists twice, here and in the app.js renderer, and both
-// must be the one regex. The JS literal is read from the file that the
-// binary embeds, so a drift on either side fails here.
+// must use the same regex. The JS literal is read from the file that the
+// binary embeds, so a change on only one side fails here.
 func TestClientLinkRegexMatchesFlattenLinks(t *testing.T) {
 	raw, err := web.Files.ReadFile("app.js")
 	if err != nil {

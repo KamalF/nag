@@ -25,7 +25,7 @@ const (
 // reminders, there is no single moment to time. id is present only when
 // n == 1 and there is a real row to point at, which the test push (§7.5)
 // does not have. So a consumer must check for the field, not infer it from
-// n. omitempty on a pointer is what makes "absent" expressible.
+// n. With omitempty on a pointer, the field can be absent from the JSON.
 type pushPayload struct {
 	N     int      `json:"n"`
 	ID    *int64   `json:"id,omitempty"`
@@ -53,9 +53,9 @@ func buildDigestPayload(held []store.HeldRow) ([]byte, error) {
 // marshalPayload is json.Marshal without HTML escaping. json.Marshal writes
 // each <, > and & as a six-byte \u escape. So a 1000-byte text of them
 // (§8.3 allows it) becomes 6000 bytes, past the ~4 KB encrypted-payload
-// ceiling. There, the send fails before any socket opens, and the row,
-// already stamped, is never pushed. The worker reads the payload with
-// JSON.parse, never as markup, so the escaping buys nothing.
+// ceiling. At that size, the send fails before any socket opens, and the
+// row, already stamped, is never pushed. The worker reads the payload with
+// JSON.parse, never as markup, so the escaping has no use.
 func marshalPayload(p pushPayload) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
@@ -89,8 +89,9 @@ const testPushText = "Nag test notification"
 
 // TestPayload is the payload of §7.5: the n == 1 form with no id, and with
 // due_at set to the server's now. No row exists to point at, which is why
-// §7.1 states id separately from n == 1. With due_at set, the body reads
-// through the ordinary formatter (§9.11), and sw.js needs no second shape.
+// §7.1 states id separately from n == 1. With due_at set, the body shows
+// that time through the ordinary formatter (§9.11), and sw.js needs no
+// second shape.
 func TestPayload(now int64) ([]byte, error) {
 	return marshalPayload(pushPayload{N: 1, DueAt: &now, Texts: []string{testPushText}})
 }

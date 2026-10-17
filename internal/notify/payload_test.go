@@ -55,7 +55,7 @@ func TestPayloadTextsCappedAtThree(t *testing.T) {
 	}
 }
 
-// The single form carries the full text; only the multi form truncates.
+// The single form carries the full text. Only the multi form truncates.
 // A 1000-byte reminder (§8.3) is most of the single form's payload, which
 // is still an order of magnitude inside the ~4 KB ceiling.
 func TestPayloadTruncatesOnlyTheMultiForm(t *testing.T) {
@@ -99,7 +99,8 @@ func TestPayloadTruncatesOnARuneBoundary(t *testing.T) {
 }
 
 // §9.10: the notification shows the label, not the markdown. Both forms go
-// through flattenLinks. It is the only place where the server touches text.
+// through flattenLinks. It is the only place where the server changes
+// reminder text.
 func TestPayloadFlattensLinks(t *testing.T) {
 	raw, err := buildDigestPayload([]store.HeldRow{{ID: 1, Text: "Renew [the domain](https://example.com)", DueAt: t0}})
 	if err != nil {

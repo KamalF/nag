@@ -17,8 +17,8 @@ func TruncateEndpoint(endpoint string) string {
 	}
 	path := u.Path
 	if len(path) > 8 {
-		// The cut moves forward to a rune boundary, as truncateBytes does
-		// (§7.1). url.Parse percent-decodes into Path. Without this step, the
+		// The cut moves forward to a rune boundary. truncateBytes also cuts
+		// on a rune boundary (§7.1). url.Parse percent-decodes into Path. Without this step, the
 		// cut halves a non-ASCII endpoint mid-rune, and the §7.5 response and
 		// the §10.4 log line show a replacement character.
 		cut := len(path) - 8

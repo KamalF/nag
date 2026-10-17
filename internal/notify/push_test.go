@@ -200,10 +200,11 @@ func TestSendToOptionsAndLogging(t *testing.T) {
 }
 
 // §7.1's delete is the one write that cannot be skipped: the response is
-// the only thing that ever knows the row is dead. So it hangs off the
-// caller's context, not the send's. A 410 that answers as its own deadline
-// expires must still be acted on. If not, the row fails on every sweep until
-// another send happens to catch it earlier.
+// the only thing that ever knows the row is dead. So the delete uses the
+// caller's context, not the context of the send. A 410 that answers as its
+// own deadline expires must still be acted on. If not, the row fails on
+// every sweep until another send happens to get the 410 earlier in its
+// deadline.
 func TestDeleteSurvivesAnExhaustedSendDeadline(t *testing.T) {
 	p, st, _ := pushFixture(t, configuredKey)
 	p.sendFn = func(ctx context.Context, _ []byte, _ *webpush.Subscription, _ *webpush.Options) (*http.Response, error) {
@@ -221,10 +222,10 @@ func TestDeleteSurvivesAnExhaustedSendDeadline(t *testing.T) {
 	}
 }
 
-// The other half of that trade: the caller's own budget does bound it. A
-// push test that spent its 12 seconds (§7.5) must not spend more on a
-// delete. What it reports is what happened: `deleted` says what the call
-// did (§7.5), and the next sweep will retire the row.
+// The other half of that trade: the caller's own budget does bound the
+// delete. A push test that spent its 12 seconds (§7.5) must not spend more
+// on a delete. What it reports is what happened: `deleted` says what the
+// call did (§7.5), and the next sweep will delete the row.
 func TestDeleteRespectsAnExpiredCallerBudget(t *testing.T) {
 	p, st, _ := pushFixture(t, configuredKey)
 	p.sendFn = respondWith(http.StatusGone)
@@ -305,7 +306,8 @@ func TestLargestPayloadFitsMozillaLimit(t *testing.T) {
 	}
 }
 
-// The claim that goes out, not the option handed to the library. webpush-go
+// This test checks the claim that goes out, not the option that the library
+// gets. webpush-go
 // adds its own "mailto:" to a non-https Subscriber. So the test must read
 // the JWT's sub off a real request to know what a push service sees.
 func TestVAPIDSubjectClaimIsOneMailto(t *testing.T) {
@@ -371,8 +373,8 @@ func TestVAPIDSubjectClaimIsOneMailto(t *testing.T) {
 }
 
 // A push endpoint can only reach a public address (§7.1). The dial refuses,
-// after DNS, every address inside its own network that a token holder can
-// aim the server at.
+// after DNS, every address inside the server's own network that a token
+// holder can aim the server at.
 func TestRefuseNonPublic(t *testing.T) {
 	for address, refused := range map[string]bool{
 		"127.0.0.1:443":          true,

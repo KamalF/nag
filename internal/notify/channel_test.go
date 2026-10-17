@@ -18,9 +18,9 @@ import (
 	"github.com/nicholas-fedor/shoutrrr/pkg/util/jsonclient"
 )
 
-// Each §4.1 classification from a typed error, and the floor. Anything
-// untypeable, including a status flattened into a sentence, is "send
-// failed", never a parse of the text.
+// Each §4.1 classification comes from a typed error, plus the floor.
+// Anything that cannot be typed, including a status that the library wrote
+// into an error message, is "send failed". The text is never parsed.
 func TestClassifyChannelError(t *testing.T) {
 	for _, tt := range []struct {
 		name string
@@ -86,7 +86,7 @@ func TestSendChannelSuccess(t *testing.T) {
 }
 
 // §7.2: a context that expires first abandons the send with "timeout". The
-// caller is free at once, whatever the library is still doing.
+// caller gets the verdict at once, whatever the library is still doing.
 func TestSendChannelAbandonsOnDeadline(t *testing.T) {
 	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -146,7 +146,7 @@ func TestAbandonedGenericSendEnds(t *testing.T) {
 	}
 }
 
-// ntfy keeps the client it builds for its TLS options: a self-signed host
+// ntfy keeps the client that it builds with its TLS options: a self-signed host
 // with disabletlsverification=yes must be reachable.
 func TestNtfyKeepsItsTLSOptions(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -160,9 +160,9 @@ func TestNtfyKeepsItsTLSOptions(t *testing.T) {
 	}
 }
 
-// However a service hangs (pushbullet has no deadline at all), a send that
-// is still running keeps new sends to its URL from starting. They are
-// NotAttempted, so a hung host costs one goroutine, not one per reminder.
+// Whatever way a service hangs (pushbullet has no deadline at all), a send
+// that is still running keeps new sends to its URL from starting. Those new
+// sends return NotAttempted, so a hung host costs one goroutine, not one per reminder.
 // After busyFor, a new send takes over the slot, so the channel is never
 // muted for good.
 func TestStuckSendBlocksItsChannelForAWhile(t *testing.T) {

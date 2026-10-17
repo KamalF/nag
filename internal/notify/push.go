@@ -27,7 +27,7 @@ type PushSender struct {
 	subject      string
 
 	// sendFn is webpush.SendNotificationWithContext. It is injectable so
-	// that tests can play every rung of the ladder without a push service.
+	// that tests can try every step of the ladder without a push service.
 	sendFn func(ctx context.Context, payload []byte, sub *webpush.Subscription, opts *webpush.Options) (*http.Response, error)
 }
 
@@ -37,7 +37,7 @@ type PushSender struct {
 // through FCM), it counts the base64 body inside a JSON map that also holds
 // a channel id and the encoding. So it refuses even a 3070-byte record with
 // a 413. 2560 bytes encode to 3416, which leaves 680 bytes for that map.
-// They hold 2457 bytes of plaintext. That is more than the 1000-byte text
+// A 2560-byte record holds 2457 bytes of plaintext. That is more than the 1000-byte text
 // of §8.3 can grow to, even with every byte JSON-escaped.
 const recordSize = 2560
 
@@ -58,8 +58,8 @@ func NewPushSender(st *store.Store, log *slog.Logger, vapidPublic, vapidPrivate,
 // the library signs sub = "mailto:mailto:…". That is not an RFC 8292
 // contact, and a strict push service can answer it with a 403 on every
 // send. The library's test is case-sensitive, but the §5.1 boot check
-// (url.Parse) is not. So this function normalizes the scheme and does not
-// trust it.
+// (url.Parse) is not. So this function normalizes the case of the scheme.
+// It does not assume that the scheme is lowercase.
 func librarySubscriber(subject string) string {
 	scheme, rest, _ := strings.Cut(subject, ":")
 	switch strings.ToLower(scheme) {
@@ -133,9 +133,10 @@ type SendResult struct {
 // 10 s from the sweep, 3 s from the push test. It is the only part of a send
 // that differs between the two callers. ctx carries whatever bounds the
 // caller as a whole. For the push test, that is its 12-second budget (§7.5).
-// The row deletion below hangs off ctx, not off the send. So a 410 that
-// answers in the last millisecond of a send still gets acted on, but never
-// at the cost of a budget that the caller must answer within.
+// The row deletion below uses ctx, not the context of the send. So the
+// server still acts on a 410 that arrives in the last millisecond of a send.
+// But the deletion never runs past a budget that the caller must answer
+// within.
 func (p *PushSender) SendTo(ctx context.Context, perSend time.Duration, payload []byte, sub store.Subscription) SendResult {
 	sendCtx, cancelSend := context.WithTimeout(ctx, perSend)
 	defer cancelSend()
@@ -200,7 +201,7 @@ func (p *PushSender) SendTo(ctx context.Context, perSend time.Duration, payload 
 //
 // It runs on a context detached from the send's deadline. The response that
 // proves the row is dead often arrives with almost nothing left of the
-// budget. The whole budget of §7.5 is 3 seconds per send. If that expiry
+// budget. In §7.5, a send has only 3 seconds. If the expiry of the send
 // cancels the delete, the row fails on every sweep forever. The ladder
 // exists to stop exactly that (§7.1).
 func (p *PushSender) deleteSubscription(ctx context.Context, endpoint, truncated string, status int) bool {

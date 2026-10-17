@@ -19,8 +19,8 @@ import (
 // timestamp. Every test states its times as offsets from t0, in seconds.
 const t0 = 1786742400
 
-// fakeSender records what phase 2 sent, one entry per send. The count is
-// how the per-subscription tests read "to whom". The sweep ignores the
+// fakeSender records what phase 2 sent, one entry per send. The
+// per-subscription tests use the count to check how many sends went out. The sweep ignores the
 // verdict, so one canned result covers every test that needs a failure.
 type fakeSender struct {
 	payloads []string
@@ -179,9 +179,9 @@ func TestRowDueInsideTheWindowWaitsForIt(t *testing.T) {
 	}
 }
 
-// The same row's second half: "Had the stretch started with an open
-// window, the first would have pinged on time and the other five would
-// have arrived as a second digest with n == 5."
+// The same row's second half: "If the stretch starts with an open window,
+// the first pings on time, and the other five arrive as a second digest
+// with n == 5."
 func TestRowsHeldAcrossTheWindowRideOneDigest(t *testing.T) {
 	f := newFixture(t)
 	f.subscribe("https://push.example/aaaaaaaa")
@@ -204,7 +204,7 @@ func TestRowsHeldAcrossTheWindowRideOneDigest(t *testing.T) {
 }
 
 // "Server down 2 days, 40 reminders due — 0": every row is past the gate at
-// mark time. So it is stamped silently with one INFO line, and phase 2 finds
+// mark time. So each row is stamped silently with one INFO line, and phase 2 finds
 // nothing. The window is untouched, which the second tick proves.
 func TestRowPastTheGateIsSilentAndKeepsTheWindow(t *testing.T) {
 	f := newFixture(t)
@@ -451,8 +451,8 @@ func markedTooLate(logs string, id int64) bool {
 
 // "Server down 40 minutes, 3 due at the start and 2 near the end — 1,
 // n == 2." It is the only row where phase 1 gates part of a tick and passes
-// the rest in the same transaction. So it is the one that pins that the
-// split reaches phase 2, not the whole marked set.
+// the rest in the same transaction. So this test is the one that checks that
+// only the rows inside the gate reach phase 2, not the whole marked set.
 func TestMixedTickDigestsOnlyTheRowsInsideTheGate(t *testing.T) {
 	f := newFixture(t)
 	f.subscribe("https://push.example/aaaaaaaa")
@@ -492,7 +492,7 @@ func TestHeldRowStrandedByAnOutageIsSilent(t *testing.T) {
 	stranded := f.create("held when the lights went out", 60)
 	f.tickAt(70) // marked on time, then held
 
-	// the server is down for two days; the boot tick finds the window open
+	// the server is down for two days. The boot tick finds the window open
 	f.tickAt(2 * 86400)
 
 	if n := len(f.sender.payloads); n != 1 {
@@ -505,7 +505,7 @@ func TestHeldRowStrandedByAnOutageIsSilent(t *testing.T) {
 	}
 }
 
-// And it costs nothing that follows: a refusal to send consumes no window.
+// The refusal also costs nothing later: a refusal to send consumes no window.
 // So a reminder that comes due right after the restart pings on time.
 func TestAStrandedHeldRowLeavesTheWindowOpen(t *testing.T) {
 	f := newFixture(t)
@@ -525,8 +525,8 @@ func TestAStrandedHeldRowLeavesTheWindowOpen(t *testing.T) {
 	}
 }
 
-// The compound case that the bound must not break, and the reason it is
-// 3600 and not 1800. Phase 1's LIMIT 50 leaves rows for a later tick, which
+// The compound case that the bound must not break, and the reason that the
+// bound starts from two windows (3600 s) and not one (1800 s). Phase 1's LIMIT 50 leaves rows for a later tick, which
 // marks them nearly 1800 s late. The digest that carries them is behind by
 // nearly a full window on top of that, because the tick before it consumed
 // one. That is ~3450 s here. The true worst case is 3570 s, pinned
@@ -555,7 +555,8 @@ func TestRowsMarkedLateAndHeldAFullWindowStillArrive(t *testing.T) {
 // exactly what the bound must clear. Phase 1's LIMIT 50 leaves rows for the
 // next tick, which marks them at the gate's own edge, 1800 s late. The tick
 // before them consumed the window that they then wait on, so that window
-// opens nearly a full 1800 s later. 3570 s, and it must arrive.
+// opens nearly a full 1800 s later. They are then 3570 s late, and the
+// digest must still carry them.
 func TestTheWorstLegitimateLatenessStillArrives(t *testing.T) {
 	f := newFixture(t)
 	f.subscribe("https://push.example/aaaaaaaa")
@@ -576,9 +577,10 @@ func TestTheWorstLegitimateLatenessStillArrives(t *testing.T) {
 	}
 }
 
-// lastPushAt is memory. So after a backward clock step (NTP, a snapshot
-// restore), a plain difference reads the window as closed for the whole
-// length of the jump. An unrecognizable window counts as open.
+// lastPushAt is in memory only. So after a backward clock step (NTP, a
+// snapshot restore), a plain difference reads the window as closed for the
+// whole length of the jump. If now is earlier than lastPushAt, the window
+// counts as open.
 func TestBackwardClockStepOpensTheWindow(t *testing.T) {
 	f := newFixture(t)
 	f.subscribe("https://push.example/aaaaaaaa")

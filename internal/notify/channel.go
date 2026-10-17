@@ -16,21 +16,21 @@ import (
 
 // ChannelSendTimeout is the per-channel bound of §7.2, the same 10 s as a
 // push. A caller's context can cut it shorter: under the 20-second budget of
-// phase 3, each send takes the smaller of the two.
+// phase 3, each send takes the smaller of 10 s and what is left of the budget.
 const ChannelSendTimeout = 10 * time.Second
 
 // newRouter builds a shoutrrr router and discards the library's own logger.
-// Its lines routinely carry the URL that it was given, and a channel URL is
-// a secret that must never reach the log (§10.4).
+// The lines of that logger routinely carry the URL that the router got, and a
+// channel URL is a secret that must never reach the log (§10.4).
 func newRouter(opts types.SenderOptions) *router.ServiceRouter {
 	r, _ := router.NewWithOptions(util.DiscardLogger, opts) // no URLs, so no error
 	return r
 }
 
 // ValidateChannelURL is the parse-before-write of `nag channel add` (§7.4).
-// The URL goes through the shoutrrr router exactly as a send builds it. So
-// the prompt refuses a typo, and the typo is not stored and found weeks
-// later as a delivery_error.
+// The URL goes through a shoutrrr router that is built exactly as a send
+// builds it. So `nag channel add` refuses a typo at once. The typo is not
+// stored, and it does not appear weeks later as a delivery_error.
 //
 // The router of shoutrrr v0.21.2 panics on some malformed custom URLs. For
 // example, on a generic URL whose query does not parse, it formats the nil
@@ -56,15 +56,16 @@ func ValidateChannelURL(rawURL string) (err error) {
 // (§7.2). The send runs on its own goroutine and writes into a buffered
 // channel of one. The caller selects on that channel and on a context with
 // the 10-second timeout. That context derives from ctx, so a shorter caller
-// deadline wins. If the context expires first, it abandons the send and the
-// verdict is timeout. That word means "attempted, did not complete",
+// deadline wins. If the context expires first, the function abandons the
+// send and the verdict is timeout. That word means "attempted, did not complete",
 // whether a deadline or a shutdown ended the send.
 //
 // §7.2 expects the abandoned goroutine to end on the timeout of its own
-// client. Most v0.21.2 services bound themselves, but not all of them.
-// pushbullet sends with context.Background() on a bare http.Client. Without
-// the timed client that sendOnce injects, generic does the same. So this
-// function bounds the leak, whatever the service does. While an earlier send
+// client. Most v0.21.2 services put a timeout on their own sends, but not
+// all of them. pushbullet sends with context.Background() on a bare
+// http.Client. Without the timed client that sendOnce injects, generic does
+// the same. So this function limits the number of goroutines that hang,
+// whatever the service does. While an earlier send
 // to the same URL is still running, and has run for less than busyFor, no
 // new send starts and the verdict is NotAttempted. Nothing was attempted, so
 // nothing is recorded for it (§4.1). The sweep logs the skip. A host that
@@ -81,7 +82,8 @@ func SendChannel(ctx context.Context, rawURL, message string) string {
 		if time.Since(prev.(*sendSlot).started) < busyFor {
 			return NotAttempted
 		}
-		// stuck past any timeout that a service can have: take over the slot
+		// the earlier send is stuck past any timeout that a service can
+		// have: take over its slot
 		inFlight.Store(rawURL, slot)
 	}
 	sendCtx, cancel := context.WithTimeout(ctx, ChannelSendTimeout)
@@ -114,15 +116,16 @@ const NotAttempted = "not attempted"
 
 // busyFor is how long a running send keeps new sends to its URL from
 // starting: about one sweep tick. It is short on purpose. Inside this
-// window, a channel is skipped silently: its rows record nothing and are
-// never sent again (§7.2: fan-out must never block). So a long window hides
-// every failure but the first. After the window, a new send starts beside
-// the old one. It carries a different reminder, never the same message
-// twice. It costs one extra goroutine per window while the old send runs
-// on. Some sends do run on: discord retries on its own clock for five
-// minutes and more. So a hung channel holds at most one goroutine per
-// busyFor for that long. A pushbullet send never ends, so a hung pushbullet
-// channel holds one goroutine per busyFor until the host closes.
+// window, the sweep skips the channel. The reminders for it record nothing
+// in delivery_error and are never sent to it again (§7.2: fan-out must
+// never block). So a long window hides every failure but the first. After
+// the window, a new send starts beside the old one. It carries a different
+// reminder, never the same message twice. It costs one extra goroutine per
+// window while the old send keeps running. Some sends do keep running:
+// discord retries on its own schedule for five minutes or more. So a hung
+// channel holds at most one goroutine per busyFor for that long. A
+// pushbullet send never ends, so a hung pushbullet channel holds one
+// goroutine per busyFor until the host closes the socket.
 var busyFor = 3 * ChannelSendTimeout
 
 type sendSlot struct{ started time.Time }
@@ -133,15 +136,18 @@ var inFlight sync.Map
 
 // timedClientServices get an injected http.Client that carries the send
 // timeout. So an abandoned send ends on its own and frees its inFlight
-// slot, and does not mute the channel until the host closes the socket.
+// slot. Without that client, the send mutes the channel until the host
+// closes the socket.
 // The set holds only generic: generic falls back to a bare &http.Client{}
 // with context.Background(), and its SetHTTPClient only swaps the field.
-// The router injects after a service has initialized. For other services,
-// this replaces a client that the service configured itself. ntfy and
+// The router injects the client after a service has initialized. For other
+// services, the injection replaces a client that the service configured
+// itself. ntfy and
 // gotify lose their TLS options (disabletlsverification,
 // insecureskipverify). pushbullet loses the Access-Token header that it set
 // on its own client. So an injection into any other service breaks the
-// sends that it was meant to bound. When the pin moves, re-check this set.
+// sends that it was meant to bound. When the pinned shoutrrr version
+// changes, check this set again.
 var timedClientServices = map[string]bool{"generic": true}
 
 // abandonedSendTimeout is the timeout of the injected client. It is a

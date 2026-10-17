@@ -14,11 +14,11 @@ var linkPattern = regexp.MustCompile(`\[([^\[\]]+)\]\(([^\s)]*)\)`)
 // flattenLinks replaces each match with its label only when the client
 // renders that match as a link: scheme http or https, and no "(" in the
 // target. Anything else stays exactly as written, brackets and all. Both
-// halves of the gate are load-bearing (§9.10). Without the gate, a flatten
+// conditions of the gate are necessary (§9.10). Without the gate, a flatten
 // turns [a](mailto:x@y.z) into "a" while the row renders it literally. It
 // also turns [a](javascript:alert(1)) into "a)". Push payloads (§7.1) and
 // shoutrrr messages (§7.2) go through this function. It is the only place
-// where the server touches text.
+// where the server changes reminder text.
 func flattenLinks(text string) string {
 	return linkPattern.ReplaceAllStringFunc(text, func(match string) string {
 		sub := linkPattern.FindStringSubmatch(match)
@@ -30,13 +30,14 @@ func flattenLinks(text string) string {
 	})
 }
 
-// rendersAsLink is the eligibility gate, shared in spirit with the client
-// renderer. It decides link-vs-literal, never validity. A refused target is
+// rendersAsLink is the eligibility gate. The client renderer applies the
+// same rule in its own code. The gate decides whether a target renders as a
+// link or as literal text. It never decides whether the target is valid. A refused target is
 // emitted literally, not rejected (§8.3 has no server-side rule here).
 func rendersAsLink(target string) bool {
 	if strings.Contains(target, "(") {
-		// the grammar cut a paren-bearing URL at its first ")", and a
-		// refusal keeps that failure visible (§9.10)
+		// the grammar cut a URL that contains a "(" at its first ")". The
+		// refusal keeps that broken link visible as literal text (§9.10)
 		return false
 	}
 	// Read the scheme off the prefix, case-insensitively, and check nothing

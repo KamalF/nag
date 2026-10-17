@@ -10,7 +10,7 @@ import (
 )
 
 // sendOnce hands the context only to services that offer a context-aware
-// send. If a service stops matching its interface after a shoutrrr bump, it
+// send. If a service stops matching its interface after a shoutrrr upgrade, it
 // falls back to Send on context.Background(), and no test notices. These
 // assertions make that a compile error instead.
 var (
