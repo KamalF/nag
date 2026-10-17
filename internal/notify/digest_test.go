@@ -14,12 +14,12 @@ import (
 	"github.com/KamalF/nag/internal/store"
 )
 
-// The §7.6 table is normative and this file is it, read row by row against
-// a fake clock and a fake push service. t0 is the spec's own example
-// timestamp; every test states its times as offsets from it in seconds.
+// The §7.6 table is normative, and this file is that table, read row by row
+// against a fake clock and a fake push service. t0 is the spec's own example
+// timestamp. Every test states its times as offsets from t0, in seconds.
 const t0 = 1786742400
 
-// fakeSender records what phase 2 sent, one entry per send — the count is
+// fakeSender records what phase 2 sent, one entry per send. The count is
 // how the per-subscription tests read "to whom". The sweep ignores the
 // verdict, so one canned result covers every test that needs a failure.
 type fakeSender struct {
@@ -43,9 +43,8 @@ type fixture struct {
 	retention int // retention_days the sweep reads each tick
 }
 
-// newFixture drives tick directly rather than Run: the cooldown is a
-// clock comparison, and a real ticker would make every window test a
-// 30-minute one.
+// newFixture drives tick directly, not Run. The cooldown is a clock
+// comparison, and with a real ticker, every window test takes 30 minutes.
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "nag.db"))
@@ -154,7 +153,7 @@ func TestTwoRowsInOneTickAreOneDigest(t *testing.T) {
 
 // "A reminder comes due 7 minutes after the last notification — 1, but at
 // the 30-minute mark". The held tick logs what it is holding and how long
-// is left, which is what distinguishes the silence from a broken sweep.
+// is left. That line tells the silence apart from a broken sweep.
 func TestRowDueInsideTheWindowWaitsForIt(t *testing.T) {
 	f := newFixture(t)
 	f.subscribe("https://push.example/aaaaaaaa")
@@ -205,7 +204,7 @@ func TestRowsHeldAcrossTheWindowRideOneDigest(t *testing.T) {
 }
 
 // "Server down 2 days, 40 reminders due — 0": every row is past the gate at
-// mark time, so it is stamped silently with one INFO line and phase 2 finds
+// mark time. So it is stamped silently with one INFO line, and phase 2 finds
 // nothing. The window is untouched, which the second tick proves.
 func TestRowPastTheGateIsSilentAndKeepsTheWindow(t *testing.T) {
 	f := newFixture(t)
@@ -228,8 +227,8 @@ func TestRowPastTheGateIsSilentAndKeepsTheWindow(t *testing.T) {
 }
 
 // "Server down 25 minutes, 60 reminders due and all inside the gate — 1
-// with n == 50, then 1 with n == 10 half an hour later." The only case
-// where phase 1's LIMIT 50 and the cooldown compound.
+// with n == 50, then 1 with n == 10 half an hour later." It is the only
+// case where phase 1's LIMIT 50 and the cooldown compound.
 func TestSixtyRowBacklogSplitsAcrossTwoDigests(t *testing.T) {
 	f := newFixture(t)
 	f.subscribe("https://push.example/aaaaaaaa")
@@ -238,7 +237,7 @@ func TestSixtyRowBacklogSplitsAcrossTwoDigests(t *testing.T) {
 	}
 
 	f.tickAt(100)
-	f.tickAt(130) // marks the last ten; the window has just closed
+	f.tickAt(130) // marks the last ten, and the window just closed
 	f.tickAt(1900)
 
 	sent := f.sent()
@@ -248,7 +247,7 @@ func TestSixtyRowBacklogSplitsAcrossTwoDigests(t *testing.T) {
 }
 
 // "A held reminder is cleared before the window opens — 0 for that row."
-// Phase 2 filters on done_at IS NULL; you already dealt with it.
+// Phase 2 filters on done_at IS NULL. You already dealt with it.
 func TestHeldRowClearedDropsOutOfTheDigest(t *testing.T) {
 	f := newFixture(t)
 	f.subscribe("https://push.example/aaaaaaaa")
@@ -293,8 +292,8 @@ func TestHeldRowClearedThenUndoneStaysSilent(t *testing.T) {
 
 // "A reminder is cleared while still in Waiting quietly, then undone 6
 // minutes after its due time — 1, within one tick of the undo." This row
-// genuinely never fired: a done row is invisible to phase 1, so both
-// columns are still NULL and the undo hands phase 1 a live candidate.
+// genuinely never fired. A done row is invisible to phase 1, so both
+// columns are still NULL, and the undo hands phase 1 a live candidate.
 func TestRowClearedBeforeItFiredNotifiesAfterTheUndo(t *testing.T) {
 	f := newFixture(t)
 	f.subscribe("https://push.example/aaaaaaaa")
@@ -451,9 +450,9 @@ func markedTooLate(logs string, id int64) bool {
 }
 
 // "Server down 40 minutes, 3 due at the start and 2 near the end — 1,
-// n == 2." The only row where phase 1 gates part of a tick and passes the
-// rest in the same transaction, so it is the one that pins the split
-// reaching phase 2 rather than the whole marked set.
+// n == 2." It is the only row where phase 1 gates part of a tick and passes
+// the rest in the same transaction. So it is the one that pins that the
+// split reaches phase 2, not the whole marked set.
 func TestMixedTickDigestsOnlyTheRowsInsideTheGate(t *testing.T) {
 	f := newFixture(t)
 	f.subscribe("https://push.example/aaaaaaaa")
@@ -480,11 +479,11 @@ func TestMixedTickDigestsOnlyTheRowsInsideTheGate(t *testing.T) {
 	}
 }
 
-// The row the bound exists for: a reminder marked on time, held by a closed
-// window, and still held when the server comes back from a long outage. The
-// phase-1 gate cannot see it — it was fresh when it was marked — so phase 2
-// is the only place that can refuse it. It ends up exactly where the gate
-// would have put it: stamped, in the list, and silent.
+// The row that the bound exists for: a reminder marked on time and held by
+// a closed window. It is still held when the server comes back from a long
+// outage. The phase-1 gate cannot see it, because it was fresh when it was
+// marked. So phase 2 is the only place that can refuse it. It ends up
+// exactly where the gate puts such a row: stamped, in the list, and silent.
 func TestHeldRowStrandedByAnOutageIsSilent(t *testing.T) {
 	f := newFixture(t)
 	f.subscribe("https://push.example/aaaaaaaa")
@@ -506,8 +505,8 @@ func TestHeldRowStrandedByAnOutageIsSilent(t *testing.T) {
 	}
 }
 
-// And it costs nothing that follows: refusing to send consumes no window, so
-// a reminder coming due right after the restart pings on time.
+// And it costs nothing that follows: a refusal to send consumes no window.
+// So a reminder that comes due right after the restart pings on time.
 func TestAStrandedHeldRowLeavesTheWindowOpen(t *testing.T) {
 	f := newFixture(t)
 	f.subscribe("https://push.example/aaaaaaaa")
@@ -526,11 +525,11 @@ func TestAStrandedHeldRowLeavesTheWindowOpen(t *testing.T) {
 	}
 }
 
-// The compound case the bound must not break, and the reason it is 3600
-// rather than 1800: phase 1's LIMIT 50 leaves rows for a later tick, which
-// marks them nearly 1800 s late — and the digest that carries them is behind
-// by nearly a full window on top of that, because the tick before it
-// consumed one. That is ~3450 s here; the true worst case is 3570 s, pinned
+// The compound case that the bound must not break, and the reason it is
+// 3600 and not 1800. Phase 1's LIMIT 50 leaves rows for a later tick, which
+// marks them nearly 1800 s late. The digest that carries them is behind by
+// nearly a full window on top of that, because the tick before it consumed
+// one. That is ~3450 s here. The true worst case is 3570 s, pinned
 // separately below.
 func TestRowsMarkedLateAndHeldAFullWindowStillArrive(t *testing.T) {
 	f := newFixture(t)
@@ -552,11 +551,11 @@ func TestRowsMarkedLateAndHeldAFullWindowStillArrive(t *testing.T) {
 	}
 }
 
-// The worst lateness the sweep can legitimately produce, which is exactly
-// what the bound has to clear. Phase 1's LIMIT 50 leaves rows for the next
-// tick, where they are marked at the gate's own edge — 1800 s late — and the
-// window they then wait on was consumed by the tick before them, so it opens
-// nearly a full 1800 s after that. 3570 s, and it must arrive.
+// The worst lateness that the sweep can legitimately produce, which is
+// exactly what the bound must clear. Phase 1's LIMIT 50 leaves rows for the
+// next tick, which marks them at the gate's own edge, 1800 s late. The tick
+// before them consumed the window that they then wait on, so that window
+// opens nearly a full 1800 s later. 3570 s, and it must arrive.
 func TestTheWorstLegitimateLatenessStillArrives(t *testing.T) {
 	f := newFixture(t)
 	f.subscribe("https://push.example/aaaaaaaa")
@@ -577,9 +576,9 @@ func TestTheWorstLegitimateLatenessStillArrives(t *testing.T) {
 	}
 }
 
-// lastPushAt is memory, so after a backward clock step (NTP, a snapshot
-// restore) a plain difference would read the window as closed for the whole
-// length of the jump. An unrecognisable window counts as open.
+// lastPushAt is memory. So after a backward clock step (NTP, a snapshot
+// restore), a plain difference reads the window as closed for the whole
+// length of the jump. An unrecognizable window counts as open.
 func TestBackwardClockStepOpensTheWindow(t *testing.T) {
 	f := newFixture(t)
 	f.subscribe("https://push.example/aaaaaaaa")

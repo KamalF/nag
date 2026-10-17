@@ -8,7 +8,7 @@ import (
 )
 
 // The §9.10 case table, every row. Whatever renders as literal text
-// client-side must stay byte-identical here; only a real link collapses
+// client-side must stay byte-identical here. Only a real link collapses
 // to its label.
 func TestFlattenLinks(t *testing.T) {
 	tests := []struct {
@@ -43,9 +43,9 @@ func TestFlattenLinks(t *testing.T) {
 	}
 }
 
-// §9.10: the parser exists twice, here and in app.js's renderer, and both
-// must be the one regex. The JS literal is read from the file the binary
-// embeds, so a drift on either side fails here.
+// §9.10: the parser exists twice, here and in the app.js renderer, and both
+// must be the one regex. The JS literal is read from the file that the
+// binary embeds, so a drift on either side fails here.
 func TestClientLinkRegexMatchesFlattenLinks(t *testing.T) {
 	raw, err := web.Files.ReadFile("app.js")
 	if err != nil {

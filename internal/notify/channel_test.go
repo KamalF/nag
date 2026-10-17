@@ -18,8 +18,8 @@ import (
 	"github.com/nicholas-fedor/shoutrrr/pkg/util/jsonclient"
 )
 
-// Each §4.1 classification from a typed error, and the floor: anything
-// untypeable — including a status flattened into a sentence — is "send
+// Each §4.1 classification from a typed error, and the floor. Anything
+// untypeable, including a status flattened into a sentence, is "send
 // failed", never a parse of the text.
 func TestClassifyChannelError(t *testing.T) {
 	for _, tt := range []struct {
@@ -48,8 +48,8 @@ func (timeoutErr) Error() string   { return "i/o timeout" }
 func (timeoutErr) Timeout() bool   { return true }
 func (timeoutErr) Temporary() bool { return true }
 
-// §11: a failure against a URL carrying a token stores neither the URL nor
-// the token — the classification is the whole of what comes back.
+// §4.1: a failure against a URL that carries a token stores neither the URL
+// nor the token. The classification is the whole of what comes back.
 func TestFailedSendCarriesNoURLAndNoToken(t *testing.T) {
 	const token = "tok_s3cr3t_abc123"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -85,8 +85,8 @@ func TestSendChannelSuccess(t *testing.T) {
 	}
 }
 
-// §7.2: a context that expires first abandons the send — "timeout", and
-// the caller is free at once, whatever the library is still doing.
+// §7.2: a context that expires first abandons the send with "timeout". The
+// caller is free at once, whatever the library is still doing.
 func TestSendChannelAbandonsOnDeadline(t *testing.T) {
 	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -114,15 +114,15 @@ func TestValidateChannelURL(t *testing.T) {
 	if err := ValidateChannelURL("nosuchservice://x"); err == nil {
 		t.Error("unknown service accepted")
 	}
-	// the library panics on this one; it must come back as a refusal
+	// the library panics on this one: it must come back as a refusal
 	if err := ValidateChannelURL("generic+https://host/hook?disabletls=maybe"); err == nil {
 		t.Error("generic URL with an unparseable query accepted")
 	}
 }
 
-// An abandoned send must still end on its own (§7.2): a generic webhook
-// that accepts and never answers would otherwise hold its goroutine and
-// socket for the life of the process, one per fan-out.
+// An abandoned send must still end on its own (§7.2). Otherwise, a generic
+// webhook that accepts and never answers holds its goroutine and socket for
+// the life of the process, one per fan-out.
 func TestAbandonedGenericSendEnds(t *testing.T) {
 	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -160,11 +160,11 @@ func TestNtfyKeepsItsTLSOptions(t *testing.T) {
 	}
 }
 
-// However a service hangs — pushbullet has no deadline at all — a send
-// still running keeps new ones to its URL from starting: they are
+// However a service hangs (pushbullet has no deadline at all), a send that
+// is still running keeps new sends to its URL from starting. They are
 // NotAttempted, so a hung host costs one goroutine, not one per reminder.
-// Past busyFor the slot is taken over, so the channel is never muted for
-// good.
+// After busyFor, a new send takes over the slot, so the channel is never
+// muted for good.
 func TestStuckSendBlocksItsChannelForAWhile(t *testing.T) {
 	var requests atomic.Int32
 	release := make(chan struct{})

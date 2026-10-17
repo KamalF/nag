@@ -201,8 +201,8 @@ func TestSendToOptionsAndLogging(t *testing.T) {
 
 // §7.1's delete is the one write that cannot be skipped: the response is
 // the only thing that ever knows the row is dead. So it hangs off the
-// caller's context, not the send's — a 410 that answers as its own deadline
-// expires still has to be acted on, or the row fails on every sweep until
+// caller's context, not the send's. A 410 that answers as its own deadline
+// expires must still be acted on. If not, the row fails on every sweep until
 // another send happens to catch it earlier.
 func TestDeleteSurvivesAnExhaustedSendDeadline(t *testing.T) {
 	p, st, _ := pushFixture(t, configuredKey)
@@ -222,9 +222,9 @@ func TestDeleteSurvivesAnExhaustedSendDeadline(t *testing.T) {
 }
 
 // The other half of that trade: the caller's own budget does bound it. A
-// push test that has spent its 12 seconds (§7.5) must not spend more on a
-// delete, and what it reports is what happened — `deleted` says what the
-// call did (§7.5), and the next sweep will retire the row.
+// push test that spent its 12 seconds (§7.5) must not spend more on a
+// delete. What it reports is what happened: `deleted` says what the call
+// did (§7.5), and the next sweep will retire the row.
 func TestDeleteRespectsAnExpiredCallerBudget(t *testing.T) {
 	p, st, _ := pushFixture(t, configuredKey)
 	p.sendFn = respondWith(http.StatusGone)
@@ -260,11 +260,11 @@ func browserSubscription(t *testing.T, endpoint, vapidPublic string) store.Subsc
 	}
 }
 
-// Mozilla's push service answers 413 when a push it forwards to FCM
-// (Firefox on Android) is over 4096 bytes, measured as the base64 body
+// Mozilla's push service answers 413 when a push that it forwards to FCM
+// (Firefox on Android) is over 4096 bytes. It measures the base64 body
 // inside a JSON map with a channel id, the encoding and a reliability id.
-// webpush-go pads every body to the record size, so the largest payload
-// nag can build, a 1000-byte text of quotes that JSON doubles, has to
+// webpush-go pads every body to the record size. So the largest payload
+// that nag can build, a 1000-byte text of quotes that JSON doubles, must
 // encrypt into a body that leaves room for that map.
 func TestLargestPayloadFitsMozillaLimit(t *testing.T) {
 	var bodyLen int
@@ -305,9 +305,9 @@ func TestLargestPayloadFitsMozillaLimit(t *testing.T) {
 	}
 }
 
-// The claim that goes out, not the option handed to the library: webpush-go
-// adds its own "mailto:" to a non-https Subscriber, so the JWT's sub must be
-// read off a real request to know what a push service sees.
+// The claim that goes out, not the option handed to the library. webpush-go
+// adds its own "mailto:" to a non-https Subscriber. So the test must read
+// the JWT's sub off a real request to know what a push service sees.
 func TestVAPIDSubjectClaimIsOneMailto(t *testing.T) {
 	var auth string
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -335,9 +335,9 @@ func TestVAPIDSubjectClaimIsOneMailto(t *testing.T) {
 	} {
 		t.Run(subject, func(t *testing.T) {
 			p := NewPushSender(st, slog.New(slog.NewTextHandler(io.Discard, nil)), public, private, subject)
-			// the real send, through the test server's own client, since
-			// pushClient refuses loopback — after checking SendTo handed it
-			// pushClient, which webpush-go would otherwise replace
+			// check that SendTo handed over pushClient, because webpush-go
+			// replaces a missing client. Then do the real send through the
+			// test server's own client, because pushClient refuses loopback.
 			p.sendFn = func(ctx context.Context, b []byte, s *webpush.Subscription, o *webpush.Options) (*http.Response, error) {
 				if o.HTTPClient != pushClient {
 					t.Error("SendTo does not send through pushClient")
@@ -370,9 +370,9 @@ func TestVAPIDSubjectClaimIsOneMailto(t *testing.T) {
 	}
 }
 
-// A push endpoint can only reach a public address (§7.1): everything a
-// token holder could aim the server at inside its own network is refused
-// at the dial, after DNS.
+// A push endpoint can only reach a public address (§7.1). The dial refuses,
+// after DNS, every address inside its own network that a token holder can
+// aim the server at.
 func TestRefuseNonPublic(t *testing.T) {
 	for address, refused := range map[string]bool{
 		"127.0.0.1:443":          true,
@@ -396,9 +396,9 @@ func TestRefuseNonPublic(t *testing.T) {
 	}
 }
 
-// The guard is on the client every send uses: a loopback endpoint is
-// refused before a byte is sent, classified as refused, and a redirect is
-// returned as the response rather than followed.
+// The guard is on the client that every send uses. A loopback endpoint is
+// refused before a byte is sent, and is classified as refused. A redirect
+// is returned as the response, not followed.
 func TestPushClientStaysPublic(t *testing.T) {
 	reached := false
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true }))

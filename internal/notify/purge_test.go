@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// §4.4: a cleared row older than retention_days is deleted by the sweep;
-// one at exactly the boundary is not — the comparison is strict.
+// §4.4: the sweep deletes a cleared row older than retention_days. It does
+// not delete one at exactly the boundary: the comparison is strict.
 func TestPurgeBoundary(t *testing.T) {
 	f := newFixture(t)
 	f.retention = 30

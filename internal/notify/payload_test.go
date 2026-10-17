@@ -17,8 +17,8 @@ func held(n int, text string) []store.HeldRow {
 	return rows
 }
 
-// The two §7.1 forms, verified on the wire rather than on the struct: the
-// absence of id and due_at is the part a consumer reads.
+// The two §7.1 forms, verified on the wire, not on the struct. The absence
+// of id and due_at is the part that a consumer reads.
 func TestPayloadForms(t *testing.T) {
 	single, err := buildDigestPayload([]store.HeldRow{{ID: 123, Text: "Renew the domain", DueAt: t0}})
 	if err != nil {
@@ -38,9 +38,9 @@ func TestPayloadForms(t *testing.T) {
 	}
 }
 
-// texts is capped at three whatever n says — the worker derives "+11 more"
-// from n - texts.length (§9.5), so a fourth entry would be payload spent
-// on something nothing reads.
+// texts is capped at three, whatever n says. The worker derives "+11 more"
+// from n - texts.length (§9.5). So a fourth entry is payload spent on
+// something that nothing reads.
 func TestPayloadTextsCappedAtThree(t *testing.T) {
 	raw, err := buildDigestPayload(held(14, "x"))
 	if err != nil {
@@ -99,7 +99,7 @@ func TestPayloadTruncatesOnARuneBoundary(t *testing.T) {
 }
 
 // §9.10: the notification shows the label, not the markdown. Both forms go
-// through flattenLinks — this is the only place the server touches text.
+// through flattenLinks. It is the only place where the server touches text.
 func TestPayloadFlattensLinks(t *testing.T) {
 	raw, err := buildDigestPayload([]store.HeldRow{{ID: 1, Text: "Renew [the domain](https://example.com)", DueAt: t0}})
 	if err != nil {
@@ -114,9 +114,10 @@ func TestPayloadFlattensLinks(t *testing.T) {
 	}
 }
 
-// The worst text §8.3 accepts must fit the ~4 KB encrypted-payload ceiling.
-// With json.Marshal's HTML escaping each & costs six bytes, so 1000 of them
-// was a 6 KB payload that failed inside the library on every send.
+// The worst text that §8.3 accepts must fit the ~4 KB encrypted-payload
+// ceiling. With json.Marshal's HTML escaping, each & costs six bytes. So
+// 1000 of them was a 6 KB payload that failed inside the library on every
+// send.
 func TestPayloadWorstCaseTextFits(t *testing.T) {
 	raw, err := buildDigestPayload([]store.HeldRow{{ID: 1, Text: strings.Repeat("&", 1000), DueAt: t0}})
 	if err != nil {

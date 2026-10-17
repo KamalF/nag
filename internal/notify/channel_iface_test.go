@@ -10,8 +10,8 @@ import (
 )
 
 // sendOnce hands the context only to services that offer a context-aware
-// send; one that stops matching its interface after a shoutrrr bump would
-// fall back to Send on context.Background() without a test noticing. These
+// send. If a service stops matching its interface after a shoutrrr bump, it
+// falls back to Send on context.Background(), and no test notices. These
 // assertions make that a compile error instead.
 var (
 	_ types.ContextSender = (*smtp.Service)(nil)

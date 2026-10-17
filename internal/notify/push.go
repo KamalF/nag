@@ -16,9 +16,9 @@ import (
 	webpush "github.com/SherClockHolmes/webpush-go"
 )
 
-// PushSender is the one send-and-handle helper shared by the sweep's
-// digest and POST /api/push/test (§7.5) — one copy of the §7.1 response
-// ladder, so there is no second one to drift.
+// PushSender is the one send-and-handle helper that the sweep's digest and
+// POST /api/push/test (§7.5) share. It holds the one copy of the §7.1
+// response ladder, so there is no second copy to drift.
 type PushSender struct {
 	store        *store.Store
 	log          *slog.Logger
@@ -26,19 +26,19 @@ type PushSender struct {
 	vapidPrivate string
 	subject      string
 
-	// sendFn is webpush.SendNotificationWithContext, injectable so tests
-	// can play every rung of the ladder without a push service.
+	// sendFn is webpush.SendNotificationWithContext. It is injectable so
+	// that tests can play every rung of the ladder without a push service.
 	sendFn func(ctx context.Context, payload []byte, sub *webpush.Subscription, opts *webpush.Options) (*http.Response, error)
 }
 
 // recordSize is the encrypted body's exact length: webpush-go pads every
 // push up to its record size, 4096 bytes by default. Mozilla's push service
-// caps what it forwards at 4096 bytes, and for Firefox on Android (routed
-// through FCM) it counts the base64 body inside a JSON map that also holds
-// a channel id and the encoding, so even a 3070-byte record is refused with
+// caps what it forwards at 4096 bytes. For Firefox on Android (routed
+// through FCM), it counts the base64 body inside a JSON map that also holds
+// a channel id and the encoding. So it refuses even a 3070-byte record with
 // a 413. 2560 bytes encode to 3416, which leaves 680 bytes for that map.
-// They hold 2457 bytes of plaintext, more than §8.3's 1000-byte text can
-// grow to even with every byte JSON-escaped.
+// They hold 2457 bytes of plaintext. That is more than the 1000-byte text
+// of §8.3 can grow to, even with every byte JSON-escaped.
 const recordSize = 2560
 
 func NewPushSender(st *store.Store, log *slog.Logger, vapidPublic, vapidPrivate, subject string) *PushSender {
@@ -53,12 +53,13 @@ func NewPushSender(st *store.Store, log *slog.Logger, vapidPublic, vapidPrivate,
 }
 
 // librarySubscriber adapts NAG_VAPID_SUBJECT to webpush-go, which prefixes
-// "mailto:" to any Subscriber not starting with "https:". §5.1 requires the
-// full URL in the env, so passed through as-is a mailto subject would sign
-// sub = "mailto:mailto:…", which is not an RFC 8292 contact and which a
-// strict push service may answer with a 403 on every send. The library's
-// test is case-sensitive while the §5.1 boot check (url.Parse) is not, so
-// the scheme is normalised here rather than trusted.
+// "mailto:" to any Subscriber that does not start with "https:". §5.1
+// requires the full URL in the env. If a mailto subject goes through as-is,
+// the library signs sub = "mailto:mailto:…". That is not an RFC 8292
+// contact, and a strict push service can answer it with a 403 on every
+// send. The library's test is case-sensitive, but the §5.1 boot check
+// (url.Parse) is not. So this function normalizes the scheme and does not
+// trust it.
 func librarySubscriber(subject string) string {
 	scheme, rest, _ := strings.Cut(subject, ":")
 	switch strings.ToLower(scheme) {
@@ -70,10 +71,10 @@ func librarySubscriber(subject string) string {
 	return subject
 }
 
-// pushClient is the client every push send goes through (§7.1): it dials
-// only public addresses, checked after DNS; it never follows a redirect, so
-// a 3xx lands on the ladder as http 3xx; and it uses no proxy, which would
-// make the dialled address the proxy's.
+// pushClient is the client that every push send goes through (§7.1). It
+// dials only public addresses, checked after DNS. It never follows a
+// redirect, so a 3xx lands on the ladder as http 3xx. It uses no proxy,
+// because a proxy makes the dialed address the proxy's.
 var pushClient = &http.Client{
 	Transport: func() *http.Transport {
 		t := http.DefaultTransport.(*http.Transport).Clone()
@@ -84,15 +85,16 @@ var pushClient = &http.Client{
 	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 }
 
-// errNonPublicAddress is the dial refusal; it classifies as refused.
+// errNonPublicAddress is the dial refusal. It classifies as refused.
 var errNonPublicAddress = errors.New("push endpoint resolves to a non-public address")
 
 // sharedAddressSpace is 100.64.0.0/10 (RFC 6598): carrier-grade NAT, and
-// the range Tailscale hands out — private in practice, not to netip.
+// the range that Tailscale hands out. It is private in practice, but not to
+// netip.
 var sharedAddressSpace = netip.MustParsePrefix("100.64.0.0/10")
 
-// refuseNonPublic is the dialer's Control hook: address is the resolved
-// ip:port about to be connected to.
+// refuseNonPublic is the dialer's Control hook. address is the resolved
+// ip:port that the dialer is about to connect to.
 func refuseNonPublic(_, address string, _ syscall.RawConn) error {
 	addrPort, err := netip.ParseAddrPort(address)
 	if err != nil {
@@ -105,35 +107,35 @@ func refuseNonPublic(_, address string, _ syscall.RawConn) error {
 	return nil
 }
 
-// deleteTimeout bounds a deletion whose caller has no deadline of its own —
-// the sweep runs on a context that never expires (§7.3).
+// deleteTimeout bounds a deletion whose caller has no deadline of its own.
+// The sweep runs on a context that never expires (§7.3).
 const deleteTimeout = 5 * time.Second
 
-// SendResult is one attempt's outcome in §8.2's closed vocabulary:
-// Status 0 means the attempt produced no HTTP status at all (rendered as
-// null), Deleted says whether this call dropped the row, and Err is empty
-// on success or one of {timeout, refused, dns, http <code>, send failed,
-// stale vapid key}.
+// SendResult is the outcome of one attempt, in the closed vocabulary of
+// §8.2. Status 0 means that the attempt produced no HTTP status at all
+// (rendered as null). Deleted says whether this call dropped the row. Err is
+// empty on success, or one of {timeout, refused, dns, http <code>, send
+// failed, stale vapid key}.
 type SendResult struct {
 	Status  int
 	Deleted bool
 	Err     string
 }
 
-// SendTo sends payload to one subscription and applies the §7.1 ladder:
-// 404/410 delete the row; 401/403 delete only when the row's key differs
-// from the configured one (a subscription bound to a retired keypair can
-// never succeed again), and are an ERROR kept otherwise; anything else is
-// logged and kept. Endpoints are logged in truncated form only (§10.4);
-// success records nothing (§7.1).
+// SendTo sends payload to one subscription and applies the §7.1 ladder.
+// 404/410 delete the row. 401/403 delete it only when the row's key differs
+// from the configured one, because a subscription bound to a retired
+// keypair can never succeed again. Otherwise, 401/403 are an ERROR and the
+// row is kept. Any other status is logged and the row is kept. Endpoints
+// are logged in truncated form only (§10.4). Success records nothing (§7.1).
 //
-// The two deadlines are separate on purpose. perSend bounds this one send —
-// 10 s from the sweep, 3 s from the push test, the only part of a send that
-// differs between the two callers — while ctx carries whatever bounds the
-// caller as a whole, which for the push test is its 12-second budget (§7.5).
-// The row deletion below hangs off ctx rather than the send, so a 410 that
-// answers in the last millisecond of a send still gets acted on, and never
-// at the cost of a budget the caller has to answer within.
+// The two deadlines are separate on purpose. perSend bounds this one send:
+// 10 s from the sweep, 3 s from the push test. It is the only part of a send
+// that differs between the two callers. ctx carries whatever bounds the
+// caller as a whole. For the push test, that is its 12-second budget (§7.5).
+// The row deletion below hangs off ctx, not off the send. So a 410 that
+// answers in the last millisecond of a send still gets acted on, but never
+// at the cost of a budget that the caller must answer within.
 func (p *PushSender) SendTo(ctx context.Context, perSend time.Duration, payload []byte, sub store.Subscription) SendResult {
 	sendCtx, cancelSend := context.WithTimeout(ctx, perSend)
 	defer cancelSend()
@@ -190,20 +192,21 @@ func (p *PushSender) SendTo(ctx context.Context, perSend time.Duration, payload 
 	}
 }
 
-// deleteSubscription drops the row the push service just declared dead, and
-// reports whether it went: `deleted` in §7.5's response says what this call
-// did, not what it intended, and a caller that claims a row is gone while it
-// is still in the table sends the reader looking in the wrong place.
+// deleteSubscription drops the row that the push service just declared
+// dead, and reports whether the row went. `deleted` in the §7.5 response
+// says what this call did, not what it intended. A caller that claims a row
+// is gone while it is still in the table sends the reader to look in the
+// wrong place.
 //
 // It runs on a context detached from the send's deadline. The response that
 // proves the row is dead often arrives with almost nothing left of the
-// budget — §7.5's whole budget is 3 seconds per send — and a delete
-// cancelled by that expiry would leave the row to fail on every sweep
-// forever, which is exactly what the ladder exists to stop (§7.1).
+// budget. The whole budget of §7.5 is 3 seconds per send. If that expiry
+// cancels the delete, the row fails on every sweep forever. The ladder
+// exists to stop exactly that (§7.1).
 func (p *PushSender) deleteSubscription(ctx context.Context, endpoint, truncated string, status int) bool {
 	// ctx here is the caller's, not the send's, so the expiry of a send
 	// cannot cancel the write that acts on its answer. The extra bound keeps
-	// a caller that has no deadline of its own — the sweep — from waiting
+	// a caller that has no deadline of its own (the sweep) from waiting
 	// indefinitely on the single connection (§4.3).
 	ctx, cancel := context.WithTimeout(ctx, deleteTimeout)
 	defer cancel()
@@ -215,8 +218,8 @@ func (p *PushSender) deleteSubscription(ctx context.Context, endpoint, truncated
 	return true
 }
 
-// classifySendError maps a transport failure onto §4.1's closed set by
-// type only — errors.As down the chain, never text parsing. Anything that
+// classifySendError maps a transport failure onto the closed set of §4.1 by
+// type only: errors.As down the chain, never text parsing. Anything that
 // cannot be typed is "send failed": a floor, not a fallback.
 func classifySendError(err error) string {
 	var dnsErr *net.DNSError

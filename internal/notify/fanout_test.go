@@ -10,11 +10,11 @@ import (
 	"github.com/KamalF/nag/internal/store"
 )
 
-// The fan-out half of the §7.6 checklist (§11 M4), against the same fake
+// The fan-out half of the §7.6 checklist, against the same fake
 // clock as phase 2 and a fake channel sender standing in for the router.
 
 // fakeChannels records each send and answers per URL: a verdict, or a
-// block until the send's context ends — an unreachable host.
+// block until the send's context ends (an unreachable host).
 type fakeChannels struct {
 	mu       sync.Mutex
 	sent     []string // "url|message"
@@ -107,8 +107,8 @@ func TestFanOutIsNotHeldByTheCooldown(t *testing.T) {
 	}
 }
 
-// Disabled channels are skipped silently; an orphan gets an INFO line;
-// neither is an attempt, so neither writes delivery_error.
+// Disabled channels are skipped silently. An orphan gets an INFO line.
+// Neither is an attempt, so neither writes delivery_error.
 func TestFanOutDisabledAndOrphan(t *testing.T) {
 	f := newFixture(t)
 	fc := withChannels(t, f, "muted")
@@ -284,7 +284,7 @@ func TestFormatDeliveryError(t *testing.T) {
 }
 
 // A shutdown mid-tick: fan-out stops at the row boundary and says why, and
-// the purge is skipped rather than failing on the cancelled context.
+// the purge is skipped rather than failing on the canceled context.
 func TestShutdownMidFanOut(t *testing.T) {
 	f := newFixture(t)
 	fc := withChannels(t, f, "dead")
@@ -307,12 +307,12 @@ func TestShutdownMidFanOut(t *testing.T) {
 		t.Errorf("no shutdown reason: %s", logs)
 	}
 	if strings.Contains(logs, "sweep: purge") {
-		t.Errorf("the purge ran on a cancelled context: %s", logs)
+		t.Errorf("the purge ran on a canceled context: %s", logs)
 	}
 }
 
-// A channel still busy with an earlier send is not attempted: nothing is
-// recorded for it (§4.1 — the column describes attempts), and the skip is
+// A channel still busy with an earlier send is not attempted. Nothing is
+// recorded for it (§4.1: the column describes attempts), and the skip is
 // logged.
 func TestFanOutSkipsABusyChannel(t *testing.T) {
 	f := newFixture(t)
@@ -331,8 +331,8 @@ func TestFanOutSkipsABusyChannel(t *testing.T) {
 }
 
 // A channel-list edit while the send is in flight clears delivery_error
-// (§4.1), and the verdict computed before it — naming a channel the row no
-// longer carries — must not land on top.
+// (§4.1). The verdict computed before the edit names a channel that the row
+// no longer carries, and it must not land on top.
 func TestFanOutVerdictYieldsToAChannelEdit(t *testing.T) {
 	f := newFixture(t)
 	withChannels(t, f, "tg")
@@ -356,9 +356,9 @@ func TestFanOutVerdictYieldsToAChannelEdit(t *testing.T) {
 	}
 }
 
-// A re-time into the past in the same second as phase 1 stamps notified_at
-// with that same now; the verdict must still yield to it (§4.1: a re-time
-// clears delivery_error).
+// A re-time into the past, in the same second as phase 1, stamps
+// notified_at with that same now. The verdict must still yield to it (§4.1:
+// a re-time clears delivery_error).
 func TestFanOutVerdictYieldsToASameSecondRetime(t *testing.T) {
 	f := newFixture(t)
 	withChannels(t, f, "tg")
