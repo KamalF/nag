@@ -54,7 +54,7 @@ func validateGeneral(g General) error {
 	// Both give a nil error, but neither is a timezone that the file states.
 	// A missing key must fail loudly (§5.5), not schedule in UTC silently.
 	if g.Timezone == "" || g.Timezone == "Local" {
-		return fmt.Errorf("[general].timezone: %q is not a timezone name (e.g. \"Europe/Paris\")", g.Timezone)
+		return fmt.Errorf("[general].timezone: %q is not a timezone name (for example \"Europe/Paris\")", g.Timezone)
 	}
 	if _, err := time.LoadLocation(g.Timezone); err != nil {
 		return fmt.Errorf("[general].timezone: unknown timezone %q", g.Timezone)

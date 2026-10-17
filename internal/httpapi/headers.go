@@ -103,7 +103,7 @@ func requireJSONBody(next http.Handler) http.Handler {
 		if mutating(r.Method) && r.ContentLength != 0 && r.URL.Path != "/logout" {
 			mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 			if err != nil || !strings.EqualFold(mediaType, "application/json") {
-				writeError(w, http.StatusUnsupportedMediaType, "a request with a body must be sent as application/json")
+				writeError(w, http.StatusUnsupportedMediaType, "a request with a body needs content-type: application/json")
 				return
 			}
 		}

@@ -176,7 +176,7 @@ func (p *PushSender) SendTo(ctx context.Context, perSend time.Duration, payload 
 		}
 	case status == http.StatusUnauthorized || status == http.StatusForbidden:
 		if sub.VAPIDPublic != p.vapidPublic {
-			p.log.Warn("push subscription bound to a retired vapid key, deleting",
+			p.log.Warn("push subscription bound to a retired VAPID key, deleting",
 				"endpoint", endpoint, "status", status)
 			return SendResult{
 				Status:  status,
@@ -184,7 +184,7 @@ func (p *PushSender) SendTo(ctx context.Context, perSend time.Duration, payload 
 				Err:     "stale vapid key",
 			}
 		}
-		p.log.Error("push rejected under the current vapid key — a bug or a push-service problem, keeping the subscription",
+		p.log.Error("push rejected under the current VAPID key — a bug or a push-service problem, keeping the subscription",
 			"endpoint", endpoint, "status", status)
 		return SendResult{Status: status, Err: fmt.Sprintf("http %d", status)}
 	default:
@@ -212,7 +212,7 @@ func (p *PushSender) deleteSubscription(ctx context.Context, endpoint, truncated
 	ctx, cancel := context.WithTimeout(ctx, deleteTimeout)
 	defer cancel()
 	if err := p.store.DeleteSubscription(ctx, endpoint); err != nil {
-		p.log.Error("delete subscription", "endpoint", truncated, "error", err)
+		p.log.Error("push: delete subscription", "endpoint", truncated, "error", err)
 		return false
 	}
 	p.log.Info("subscription deleted", "endpoint", truncated, "status", status)

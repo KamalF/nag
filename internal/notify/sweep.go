@@ -225,7 +225,7 @@ func (s *Sweep) digest(ctx context.Context, now int64) {
 	if len(subs) == 0 {
 		// without this line, the first reminders after a fresh deploy
 		// vanish with no trace (§7.1)
-		s.log.Warn("no push subscriptions stored — the notification goes nowhere",
+		s.log.Warn("sweep: no push subscriptions stored — the notification goes nowhere",
 			"count", len(held), "first_id", held[0].ID)
 		return
 	}
@@ -360,7 +360,7 @@ func formatDeliveryError(failures []string) string {
 func (s *Sweep) logHeld(ctx context.Context, now int64) {
 	held, err := s.store.HeldCount(ctx)
 	if err != nil {
-		s.log.Error("sweep: held count", "error", err)
+		s.log.Error("sweep: count held rows", "error", err)
 		return
 	}
 	if held == 0 {

@@ -73,7 +73,7 @@ func runServe(stderr io.Writer) int {
 	// §7.1: it is better to find a retired key at startup than after three
 	// weeks of silent push failures
 	if n, err := st.MismatchedKeyCount(context.Background(), env.vapidPublic); err == nil && n > 0 {
-		logger.Warn("subscriptions bound to a different vapid key — each browser must re-subscribe (open the app once per device)",
+		logger.Warn("subscriptions bound to a different VAPID key — each browser must re-subscribe (open the app once per device)",
 			"count", n)
 	}
 

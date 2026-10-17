@@ -40,7 +40,7 @@ func newRouter(opts types.SenderOptions) *router.ServiceRouter {
 func ValidateChannelURL(rawURL string) (err error) {
 	defer func() {
 		if recover() != nil {
-			err = errors.New("the URL could not be parsed")
+			err = errors.New("shoutrrr cannot parse the URL: check the scheme and the query")
 		}
 	}()
 	_, err = newRouter(types.SenderOptions{}).Locate(rawURL)

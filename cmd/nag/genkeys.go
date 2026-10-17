@@ -33,7 +33,7 @@ func runGenkeys(stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "NAG_VAPID_PUBLIC=%s\n", public)
 	fmt.Fprintf(stdout, "NAG_VAPID_PRIVATE=%s\n", private)
 	fmt.Fprintf(stdout, "NAG_VAPID_SUBJECT=%s\n", placeholderSubject)
-	fmt.Fprintf(stderr, "Keys written. One edit is still required: replace %s\nwith your own address in nag.env — the placeholder itself is a boot error.\n",
+	fmt.Fprintf(stderr, "Keys written. One edit is still required: replace %s\nwith your own address in nag.env. nag refuses to start while the placeholder is there.\n",
 		placeholderSubject)
 	return 0
 }

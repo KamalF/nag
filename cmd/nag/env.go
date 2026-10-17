@@ -83,7 +83,7 @@ func checkToken(token string) error {
 // exactly wantBytes.
 func checkVAPIDKey(name, value string, wantBytes int) error {
 	if value == "" {
-		return fmt.Errorf("%s is not set (expected unpadded base64url decoding to %d bytes).\n%s",
+		return fmt.Errorf("%s is not set (expected unpadded base64url that decodes to %d bytes).\n%s",
 			name, wantBytes, genkeysFix)
 	}
 	// Go's base64 decoder ignores \r and \n. If a TTY corrupts the `genkeys`
@@ -121,7 +121,7 @@ func describeNonBase64URL(value string) string {
 	default:
 		// every character is valid and the string still did not decode:
 		// its length is one past a multiple of four, which no encoding has
-		return fmt.Sprintf("%d characters, a length no base64url string has — likely truncated", len(value))
+		return fmt.Sprintf("%d characters, a length that no base64url string can have — the value is probably truncated", len(value))
 	}
 }
 

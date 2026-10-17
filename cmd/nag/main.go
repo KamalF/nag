@@ -29,9 +29,9 @@ const usage = `usage: nag <subcommand>
 
   nag serve          # the default, per the Dockerfile CMD
   nag genkeys        # emit a complete env file to stdout
-  nag healthcheck    # exit 0 if the local instance is serving; for Docker HEALTHCHECK
+  nag healthcheck    # exit 0 if the local instance is serving (for Docker HEALTHCHECK)
   nag version        # build version + Go version to stdout, exit 0
-  nag config check   # validate NAG_CONFIG and exit; 0 if a reload would accept it
+  nag config check   # validate NAG_CONFIG, exit 0 if a reload accepts it
   nag channel add|list|rm|enable|disable|test
 `
 

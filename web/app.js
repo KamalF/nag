@@ -525,7 +525,7 @@ let picker = null;
 
 const ITEM_PX = 44; // --item: one wheel row
 const WHEEL_SETTLE_MS = 90;
-const PAST_SENTENCE = "in the past — it'll be waiting in Needs you now, and nothing will be sent";
+const PAST_SENTENCE = "in the past — it will wait in Needs you now, and nothing will be sent";
 const monthFormat = new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' });
 const shortWeekdayFormat = new Intl.DateTimeFormat(undefined, { weekday: 'short' });
 
@@ -1022,7 +1022,7 @@ const SLOT_LINES = {
   ios: 'On iPhone, notifications need Nag on your Home Screen: Share, then Add to Home Screen.',
   unsupported: 'This browser cannot show notifications for Nag. Everything else works.',
   denied:
-    'Your browser is blocking notifications for Nag. Re-allow them in site settings to turn them back on.',
+    'Your browser is blocking notifications for Nag. To turn them back on, allow them again in the site settings.',
 };
 
 // decodeKey and encodeKey are the only encoding code in app.js. They must be
@@ -1705,7 +1705,7 @@ async function repairPresets() {
     // when the editor closes
     if (row.late) row.acts.replaceChildren(...rowActions(row));
   }
-  toast('The preset list changed on the server — the chips are current now, pick again.');
+  toast('The preset list changed on the server. The chips are up to date now: pick again.');
 }
 
 // clearRow is the one optimistic path: Clear shows a 5-second undo toast

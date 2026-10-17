@@ -213,7 +213,7 @@ func TestPushTestBudgetLeavesHeadroomUnderWriteTimeout(t *testing.T) {
 	// every subscription comes back "not attempted" under a 200. That is a
 	// diagnostic endpoint that diagnoses nothing.
 	if pushTestBudget < pushTestPerSend {
-		t.Fatalf("budget %s is under a single send (%s) — the handler could not attempt one",
+		t.Fatalf("budget %s is under a single send (%s) — the handler cannot attempt one",
 			pushTestBudget, pushTestPerSend)
 	}
 }

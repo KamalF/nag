@@ -53,7 +53,7 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 func decodeBody(r *http.Request, v any) string {
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
-		return "malformed json body" // a body over the 16 KB cap also fails here (§8.2)
+		return "request body is larger than 16 kb, or incomplete" // the cap of §8.2
 	}
 	if !utf8.Valid(raw) || hasLoneSurrogate(raw) {
 		return "request body is not valid utf-8"

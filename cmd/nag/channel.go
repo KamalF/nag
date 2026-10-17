@@ -81,7 +81,7 @@ func runChannel(args []string, stdout, stderr io.Writer) int {
 // serving container holds the write lock, and busy_timeout ran out (§7.4).
 func describeChannelError(err error) error {
 	if store.IsBusy(err) {
-		return errors.New("the database is locked — the running server is probably writing to it; retry in a moment")
+		return errors.New("the database is locked: the running server is probably writing to it. Retry in a moment.")
 	}
 	return err
 }
@@ -100,7 +100,7 @@ func channelAdd(ctx context.Context, st *store.Store, name, rawURL string, stdou
 	}
 	if err := st.AddChannel(ctx, name, rawURL); err != nil {
 		if errors.Is(err, store.ErrChannelExists) {
-			return fmt.Errorf("a channel named %q already exists — rm it first to repoint it", name)
+			return fmt.Errorf("a channel named %q already exists — to change its URL, run `nag channel rm %s`, then add it again", name, name)
 		}
 		return err
 	}
@@ -141,7 +141,7 @@ func channelRemove(ctx context.Context, st *store.Store, name string, stdout io.
 	}
 	fmt.Fprintf(stdout, "removed %s\n", name)
 	if refs > 0 {
-		fmt.Fprintf(stdout, "warning: %d reminder(s) still name %s; it is skipped when they fire, and stays on them until edited off\n",
+		fmt.Fprintf(stdout, "warning: %d reminder(s) still name %s. They skip it when they fire, and keep the name until you edit it out.\n",
 			refs, name)
 	}
 	return nil
@@ -204,7 +204,7 @@ func channelTest(ctx context.Context, st *store.Store, name string, stdout io.Wr
 	}
 	note := ""
 	if !c.Enabled {
-		note = " (disabled — sent anyway; reminders skip it)"
+		note = " (disabled: sent anyway, but reminders skip it)"
 	}
 	if verdict := notify.SendChannel(ctx, c.URL, testMessage); verdict != "" {
 		fmt.Fprintf(stdout, "%s: %s%s\n", name, verdict, note)
