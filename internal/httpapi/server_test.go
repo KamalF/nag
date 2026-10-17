@@ -46,9 +46,9 @@ func testServerWithDB(t *testing.T, logs io.Writer) (*Server, string) {
 		Config: config.NewLive("", testConfig(), testVAPIDPublic),
 		Web:    web,
 		Token:  testToken,
-		// serve always wires a sender, so a nil one is a test-only shape;
-		// the default keeps POST /api/push/test from nil-panicking in a test
-		// that did not think about push at all
+		// serve always wires a sender, so a nil one is a test-only shape.
+		// The default keeps POST /api/push/test from a nil panic in a test
+		// that did not think about push at all.
 		Push: &fakePush{results: []notify.SendResult{{Status: 201}}},
 		Log:  slog.New(slog.NewTextHandler(logs, nil)),
 	})
@@ -75,8 +75,8 @@ func testConfig() *config.Config {
 }
 
 // insertChannel writes a channels row through a second connection on the
-// same file — the CLI that owns channel writes is an M4 deliverable, and
-// this mirrors its cross-process access (§4.3).
+// same file. This mirrors the cross-process access of the CLI that owns
+// channel writes (§4.3).
 func insertChannel(t *testing.T, dbPath, name string, enabled bool) {
 	t.Helper()
 	db, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=busy_timeout(5000)")
@@ -157,7 +157,7 @@ func TestAPICatchAll(t *testing.T) {
 	})
 }
 
-// §10.4: mutations and errors get one line; successful GETs get none.
+// §10.4: mutations and errors get one line. Successful GETs get none.
 func TestRequestLogging(t *testing.T) {
 	var logs strings.Builder
 	h := testServer(t, &logs).Handler()

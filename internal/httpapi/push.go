@@ -11,10 +11,10 @@ import (
 	"github.com/KamalF/nag/internal/notify"
 )
 
-// handleSubscribe is POST /api/push/subscribe (§8.2): shape-check all
-// three cryptographic fields, upsert by endpoint, 204 with no body — there
-// is no subscription object in the API, so the only thing a body could
-// carry is an echo of the request.
+// handleSubscribe is POST /api/push/subscribe (§8.2). It shape-checks all
+// three cryptographic fields, upserts by endpoint, and answers 204 with no
+// body. The API has no subscription object, so a body can only carry an
+// echo of the request.
 func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Endpoint string `json:"endpoint"`
@@ -32,9 +32,9 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
-	// The same shape check §5.1 applies to the server's own keys: a
-	// mangled value here is accepted by the table and by nothing after it
-	// — it would surface as a send failure on every sweep (§8.2).
+	// This is the same shape check that §5.1 applies to the server's own
+	// keys. The table accepts a mangled value here, but nothing after it
+	// does: it surfaces as a send failure on every sweep (§8.2).
 	for _, check := range []struct {
 		field, value string
 		wantBytes    int
@@ -49,8 +49,8 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// stored key = the key the client says it subscribed under, never the
-	// configured one (§7.1)
+	// The stored key is the key that the client says it subscribed under,
+	// never the configured one (§7.1).
 	err := s.store.UpsertSubscription(r.Context(), body.Endpoint,
 		body.Keys.P256dh, body.Keys.Auth, body.ApplicationServerKey, time.Now().Unix())
 	if err != nil {
@@ -63,8 +63,8 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleUnsubscribe is POST /api/push/unsubscribe: {endpoint} → 204,
-// stranger or not. The row that strands when a client can't call this is
-// deleted on the next 404/410 anyway (§7.1).
+// for a known endpoint or not. If a client cannot call this, its row
+// strands. The next 404/410 deletes that row anyway (§7.1).
 func (s *Server) handleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Endpoint string `json:"endpoint"`
@@ -90,9 +90,10 @@ func endpointError(endpoint string) string {
 	return ""
 }
 
-// base64FieldError wants unpadded base64url decoding to exactly wantBytes,
-// rejected with a 400 naming the field (§8.2). CR/LF is rejected before
-// decoding — Go's decoder ignores those bytes silently.
+// base64FieldError wants unpadded base64url that decodes to exactly
+// wantBytes. Anything else is rejected with a 400 that names the field
+// (§8.2). CR/LF is rejected before decoding, because Go's decoder ignores
+// those bytes silently.
 func base64FieldError(field, value string, wantBytes int) string {
 	if strings.ContainsAny(value, "\r\n") {
 		return fmt.Sprintf("%s contains a carriage return or newline", field)

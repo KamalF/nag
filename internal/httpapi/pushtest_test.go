@@ -13,7 +13,7 @@ import (
 	"github.com/KamalF/nag/internal/store"
 )
 
-// fakePush answers as the §7.1 ladder would have, one canned verdict per
+// fakePush answers as the §7.1 ladder does, with one canned verdict per
 // call. delay lets a test exhaust the send budget without spending twelve
 // real seconds on it.
 type fakePush struct {
@@ -115,8 +115,8 @@ func TestPushTestReportsStaleKeyDeletion(t *testing.T) {
 	}
 }
 
-// §8.2: status is null when the attempt produced no HTTP status at all — a
-// 0 would be indistinguishable from a code and would sort as one.
+// §8.2: status is null when the attempt produced no HTTP status at all. A 0
+// cannot be told apart from a code, and sorts as one.
 func TestPushTestReportsNullStatusOnATransportFailure(t *testing.T) {
 	push := &fakePush{results: []notify.SendResult{{Err: "timeout"}}}
 	s := pushTestServer(t, nil, push, "https://push.example.net/send/AbCdEfGh12345678")
@@ -173,8 +173,8 @@ func TestPushTestBudgetExhaustionStillReportsEveryRow(t *testing.T) {
 }
 
 // §10.4: the line for this endpoint carries how many subscriptions it
-// attempted and how many rows it deleted — the only two things it knows —
-// and no endpoint in full.
+// attempted and how many rows it deleted, the only two things it knows.
+// It carries no endpoint in full.
 func TestPushTestLogsAttemptedAndDeletedCounts(t *testing.T) {
 	var logs strings.Builder
 	push := &fakePush{results: []notify.SendResult{
@@ -195,20 +195,20 @@ func TestPushTestLogsAttemptedAndDeletedCounts(t *testing.T) {
 	}
 }
 
-// §7.5's budget is derived from WriteTimeout rather than stated as a number,
-// so that tuning the write deadline cannot quietly leave this handler
-// spending longer on third-party sockets than the deadline it must answer
-// within. The two checks catch different things, and the first cannot fail
-// while the derivation stands — that is what the derivation is for; it is
-// here to catch the budget being restated as a literal that no longer fits.
+// §7.5's budget is derived from WriteTimeout, not stated as a number, so
+// that tuning the write deadline cannot quietly leave this handler spending
+// longer on third-party sockets than the deadline it must answer within.
+// The two checks catch different things. The first cannot fail while the
+// derivation stands, because that is what the derivation is for. It is here
+// to catch a restatement of the budget as a literal that no longer fits.
 func TestPushTestBudgetLeavesHeadroomUnderWriteTimeout(t *testing.T) {
 	if pushTestBudget >= WriteTimeout {
 		t.Fatalf("budget %s does not fit under WriteTimeout %s", pushTestBudget, WriteTimeout)
 	}
-	// This is the half the derivation cannot guarantee: subtract the headroom
-	// from a small enough WriteTimeout and the budget reaches zero or goes
-	// negative, so the handler's deadline is already expired at its first
-	// send and every subscription comes back "not attempted" under a 200 — a
+	// This is the half that the derivation cannot guarantee. If WriteTimeout
+	// is small enough, the budget after the headroom is zero or negative.
+	// Then the handler's deadline has already expired at its first send, and
+	// every subscription comes back "not attempted" under a 200. That is a
 	// diagnostic endpoint that diagnoses nothing.
 	if pushTestBudget < pushTestPerSend {
 		t.Fatalf("budget %s is under a single send (%s) — the handler could not attempt one",

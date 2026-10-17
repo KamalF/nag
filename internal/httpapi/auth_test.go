@@ -16,8 +16,8 @@ const testToken = "test-token-of-sufficient-length"
 
 // The §8.1 encoding, rebuilt independently: exp as a decimal ASCII string,
 // k = HMAC(NAG_TOKEN, "nag-cookie-v1"), mac = HMAC(k, "v1|"+exp), value
-// b64(exp)+"."+b64(mac) in unpadded base64url. Two readings of §8.1 are
-// two implementations that cannot verify each other's cookies — this test
+// b64(exp)+"."+b64(mac) in unpadded base64url. Two readings of §8.1 give
+// two implementations that cannot verify each other's cookies. This test
 // is the second reading.
 func TestCookieEncodingIsPinned(t *testing.T) {
 	expiry := time.Unix(1786742400, 0)
@@ -121,9 +121,9 @@ func TestLoginWrongToken(t *testing.T) {
 	assertErrorShape(t, rec, "wrong token")
 }
 
-// A wrong-token request the client abandoned must leave the §8.1 queue at
-// once: held behind the slot or the sleep, every dropped connection of an
-// unauthenticated flood would stay alive until its turn.
+// A wrong-token request that the client abandoned must leave the §8.1 queue
+// at once. If it stays behind the slot or the sleep, every dropped
+// connection of an unauthenticated flood stays alive until its turn.
 func TestAbandonedFailedLoginLeavesTheQueue(t *testing.T) {
 	for _, tt := range []struct {
 		name     string
@@ -226,8 +226,8 @@ func TestAPIRequiresAuth(t *testing.T) {
 }
 
 // The renewal threshold is computed from cookieMaxAge, never hardcoded:
-// a cookie younger than 30 days passes untouched, an older one is
-// re-issued on the way out (§8.1).
+// a cookie younger than 30 days passes untouched. For an older one, the
+// response carries a new cookie (§8.1).
 func TestSlidingRenewal(t *testing.T) {
 	h := testServer(t, nil).Handler()
 	key := cookieKey(testToken)

@@ -54,7 +54,7 @@ func TestStateETag(t *testing.T) {
 }
 
 // The exclusion rule itself: two responses differing only in server_time
-// share a tag (§8.2 — hashing it would mean the 304 never fires).
+// share a tag (§8.2: with server_time in the hash, the 304 never fires).
 func TestStateETagExcludesServerTime(t *testing.T) {
 	resp := stateResponse{
 		ServerTime:   1000,

@@ -116,7 +116,7 @@ func TestCreateReminderShape(t *testing.T) {
 	}
 }
 
-// A paired surrogate escape is ordinary text; only a lone half is invalid.
+// A paired surrogate escape is ordinary text. Only a lone half is invalid.
 func TestCreateAcceptsEscapedSurrogatePair(t *testing.T) {
 	h := testServer(t, nil).Handler()
 	got := createReminder(t, h, fmt.Sprintf(`{"text":"ok \ud83d\ude00 \\ud800","due_at":%d}`, time.Now().Unix()+3600))
@@ -135,7 +135,7 @@ func TestCreateWithPreset(t *testing.T) {
 	}
 }
 
-// §4.1: a write that lands in the past never notifies — the same statement
+// §4.1: a write that lands in the past never notifies. The same statement
 // stamps both notified_at and pushed_at.
 func TestBackdatedCreateCarriesBothStamps(t *testing.T) {
 	s, _ := testServerWithDB(t, nil)
@@ -156,7 +156,7 @@ func TestBackdatedCreateCarriesBothStamps(t *testing.T) {
 	}
 }
 
-func TestExtraChannelsCanonicalised(t *testing.T) {
+func TestExtraChannelsCanonicalized(t *testing.T) {
 	s, dbPath := testServerWithDB(t, nil)
 	insertChannel(t, dbPath, "ntfy", true)
 	insertChannel(t, dbPath, "telegram", false) // disabled is accepted at write time (§8.3)
@@ -228,11 +228,11 @@ func TestCreateLogsTheNewID(t *testing.T) {
 	}
 }
 
-// §10.4's line carries the affected id once. setLogID is the "id" field of
-// setLogAttrs, which appends — where it used to overwrite a single slot — so
-// a handler setting it twice would now print two. Every mutating endpoint
-// that names a reminder is checked, because the invariant is a property of
-// each handler rather than of the mechanism they share.
+// §10.4's line carries the affected id once. setLogID sets the "id" field of
+// setLogAttrs. setLogAttrs appends (it used to overwrite a single slot), so
+// a handler that sets the id twice now prints two. The test checks every
+// mutating endpoint that names a reminder, because the invariant is a
+// property of each handler, not of the mechanism that they share.
 func TestMutatingRequestsLogExactlyOneID(t *testing.T) {
 	var logs strings.Builder
 	h := testServer(t, &logs).Handler()

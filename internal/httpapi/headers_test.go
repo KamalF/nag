@@ -8,9 +8,9 @@ import (
 	"testing"
 )
 
-// §10.2: the three headers on every response class — a static asset, an
+// §10.2: the three headers on every response class (a static asset, an
 // API success, an API error, the catch-all, the health check, a failed
-// login — with the CSP compared byte for byte.
+// login), with the CSP compared byte for byte.
 func TestSecurityHeadersOnEveryResponse(t *testing.T) {
 	const csp = "default-src 'self'; script-src 'self'; style-src 'self'; " +
 		"img-src 'self' data:; font-src 'none'; connect-src 'self'; " +
@@ -39,8 +39,8 @@ func TestSecurityHeadersOnEveryResponse(t *testing.T) {
 }
 
 // §10.2: a browser mutation from another origin is refused, a sibling
-// subdomain included (same site, so SameSite=Lax would send the cookie);
-// a same-origin one, or one with no browser headers at all (curl), passes.
+// subdomain included (same site, so SameSite=Lax sends the cookie). A
+// same-origin one, or one with no browser headers at all (curl), passes.
 func TestCrossOriginMutationsRefused(t *testing.T) {
 	h := testServer(t, nil).Handler()
 	created := createReminder(t, h, `{"text":"x","preset":"30min"}`)
@@ -81,7 +81,7 @@ func authedRequest(method, path string) *http.Request {
 	return req
 }
 
-// The caching split: /api/* is no-store; assets are no-cache with an ETag
+// The caching split: /api/* is no-store. Assets are no-cache with an ETag
 // from their content, and a matching If-None-Match answers 304.
 func TestCachingSplit(t *testing.T) {
 	h := testServer(t, nil).Handler()
@@ -110,8 +110,8 @@ func TestCachingSplit(t *testing.T) {
 	}
 }
 
-// §10.2's CSRF rule: a bodied mutation needs application/json; a bodyless
-// one — /done, the push test — does not, and neither does /logout.
+// §10.2's CSRF rule: a bodied mutation needs application/json. A bodyless
+// one (/done, the push test) does not, and neither does /logout.
 func TestJSONContentTypeRule(t *testing.T) {
 	h := testServer(t, nil).Handler()
 	created := createReminder(t, h, `{"text":"x","preset":"30min"}`)

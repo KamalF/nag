@@ -11,9 +11,8 @@ import (
 	"github.com/KamalF/nag/internal/store"
 )
 
-// reminderID parses the {id} path value. Anything that is not a stored id
-// — non-numeric included — is the §8.3 unknown-{id} 404, reported by the
-// caller.
+// reminderID parses the {id} path value. Anything that is not a stored id,
+// non-numeric included, is the §8.3 unknown-{id} 404. The caller reports it.
 func reminderID(r *http.Request) (int64, bool) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	return id, err == nil && id > 0
@@ -25,14 +24,14 @@ func (s *Server) handleDone(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleUndone is POST /api/reminders/{id}/undone → 200 + the reminder.
-// The §4.1 pushed_at guard lives in the store; notified_at in the response
-// is what tells a caller which of the two undone cases it hit.
+// The §4.1 pushed_at guard lives in the store. notified_at in the response
+// tells a caller which of the two undone cases it hit.
 func (s *Server) handleUndone(w http.ResponseWriter, r *http.Request) {
 	s.lifecycleUpdate(w, r, s.store.MarkUndone)
 }
 
 // lifecycleUpdate runs one id+now store operation and answers 200 with the
-// row as it stands — no-ops included.
+// row as it stands, no-ops included.
 func (s *Server) lifecycleUpdate(w http.ResponseWriter, r *http.Request,
 	update func(ctx context.Context, id, now int64) (store.Reminder, error)) {
 	id, ok := reminderID(r)

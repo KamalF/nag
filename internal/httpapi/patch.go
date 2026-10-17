@@ -14,10 +14,10 @@ import (
 	"github.com/KamalF/nag/internal/store"
 )
 
-// handlePatch is PATCH /api/reminders/{id} — the only write path for both
+// handlePatch is PATCH /api/reminders/{id}, the only write path for both
 // a correction and a re-snooze (§8.4). Presence detection needs a map
-// decode (§8.3): absent means unchanged, null and empty are answers of
-// their own, and a struct decode cannot tell those apart.
+// decode (§8.3). An absent key means unchanged, and null and empty are
+// answers of their own. A struct decode cannot tell those apart.
 func (s *Server) handlePatch(w http.ResponseWriter, r *http.Request) {
 	id, ok := reminderID(r)
 	if !ok {
@@ -45,9 +45,9 @@ func (s *Server) handlePatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// one clock read per request (§8.2): the preset resolves from it and the
-	// backdated check compares against it, so a chip tapped a hair before
-	// its own target cannot resolve to a moment the second read calls past
+	// One clock read per request (§8.2): the preset resolves from it and the
+	// backdated check compares against it. So a chip tapped just before its
+	// own target cannot resolve to a moment that a second read calls past.
 	now := time.Now()
 	upd, errMessage, err := s.buildUpdate(r.Context(), fields, current, s.live.Load(), now)
 	if err != nil {
@@ -62,8 +62,8 @@ func (s *Server) handlePatch(w http.ResponseWriter, r *http.Request) {
 
 	rem, err := s.store.UpdateReminder(r.Context(), current, upd, now.Unix())
 	if errors.Is(err, sql.ErrNoRows) {
-		// deleted between our read and the update — §8.3's unknown-{id} 404,
-		// not a 500
+		// The row was deleted between our read and the update. That is
+		// §8.3's unknown-{id} 404, not a 500.
 		writeError(w, http.StatusNotFound, "no such reminder")
 		return
 	}
@@ -77,8 +77,8 @@ func (s *Server) handlePatch(w http.ResponseWriter, r *http.Request) {
 }
 
 // buildUpdate consumes the known keys from fields and rejects what is
-// left, naming the lexically first leftover — Go randomises map
-// iteration, so "the first one" is chosen, not taken (§8.3).
+// left. The error names the lexically first leftover. Go randomizes map
+// iteration, so the code chooses "the first one" explicitly (§8.3).
 func (s *Server) buildUpdate(ctx context.Context, fields map[string]json.RawMessage, current store.Reminder,
 	snap *config.Snapshot, now time.Time) (store.ReminderUpdate, string, error) {
 	var upd store.ReminderUpdate
@@ -131,8 +131,8 @@ func (s *Server) buildUpdate(ctx context.Context, fields map[string]json.RawMess
 				return upd, "extra_channels must be an array of names or null", nil
 			}
 		}
-		// a name already stored on the row is carried, never re-checked —
-		// the orphan asymmetry (§8.3)
+		// A name already stored on the row is carried and never re-checked.
+		// This is the orphan asymmetry (§8.3).
 		canonical, errMessage, err := s.canonicalChannels(ctx, names, current.ExtraChannels)
 		if err != nil || errMessage != "" {
 			return upd, errMessage, err

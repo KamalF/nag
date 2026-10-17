@@ -18,8 +18,8 @@ import (
 	"github.com/KamalF/nag/internal/store"
 )
 
-// §8.3: due_at must land in 2000-01-01 .. 2100-01-01 UTC — the check stops
-// a curl typo or a millisecond timestamp from becoming a row every
+// §8.3: due_at must land in 2000-01-01 .. 2100-01-01 UTC. The check stops
+// a curl typo or a millisecond timestamp from becoming a row that every
 // formatter downstream renders around the year 56 600.
 const (
 	dueAtMin = 946684800
@@ -117,9 +117,9 @@ type stateResponse struct {
 	Later          []reminderResponse `json:"later"`
 }
 
-// handleState is GET /api/state (§8.2). `now` is read once and every part
-// of the response derives from it — server_time, overdue_count, and which
-// list each row lands in — so the list can never disagree with the badge.
+// handleState is GET /api/state (§8.2). It reads `now` once, and every part
+// of the response derives from it: server_time, overdue_count, and the list
+// that each row lands in. So the list can never disagree with the badge.
 func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().Unix()
 	pending, err := s.store.ListPending(r.Context())
@@ -159,11 +159,11 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// stateETag hashes the response with server_time excluded (§8.2): that
-// field moves every second, and hashing it would mean the 304 never once
-// fires. Weak (W/) is the accurate label, not a hedge: two responses
-// sharing the tag are equivalent for every purpose this client has and
-// are not byte-identical, since server_time has moved between them.
+// stateETag hashes the response with server_time excluded (§8.2). That
+// field moves every second, so with it in the hash the 304 never once
+// fires. Weak (W/) is the accurate label, not a hedge. Two responses that
+// share the tag are equivalent for every purpose this client has, but they
+// are not byte-identical, because server_time moved between them.
 func stateETag(resp stateResponse) string {
 	resp.ServerTime = 0
 	raw, _ := json.Marshal(resp)
@@ -172,8 +172,8 @@ func stateETag(resp stateResponse) string {
 }
 
 // resolveDueAt applies §8.3's exactly-one-of rule and returns the due
-// instant in Unix seconds. The server never falls back to default_preset —
-// the client always resolves it.
+// instant in Unix seconds. The server never falls back to default_preset.
+// The client always resolves it.
 func resolveDueAt(snap *config.Snapshot, preset *string, dueAt *int64, now time.Time) (int64, string) {
 	switch {
 	case preset != nil && dueAt != nil:
@@ -185,7 +185,7 @@ func resolveDueAt(snap *config.Snapshot, preset *string, dueAt *int64, now time.
 		}
 		due, err := presets.Evaluate(p, now, snap.Location)
 		if err != nil {
-			// unreachable on a validated config; answer honestly anyway
+			// Unreachable on a validated config. Answer honestly anyway.
 			return 0, fmt.Sprintf("preset %q cannot be evaluated", *preset)
 		}
 		return due.Unix(), ""
@@ -209,10 +209,11 @@ func findPreset(snap *config.Snapshot, key string) (config.Preset, bool) {
 }
 
 // validateText applies §8.3: trimmed, non-empty after trimming, max 1000
-// bytes, no control characters (newlines included — the
-// capture control is a single-line input). Returns the trimmed text or a
-// message naming the character class, not the byte. UTF-8 validity is
-// decodeBody's, since only the raw bytes can still show it.
+// bytes, and no control characters. Newlines count as control characters,
+// because the capture control is a single-line input. It returns the
+// trimmed text, or a message that names the character class, not the byte.
+// decodeBody checks UTF-8 validity, because only the raw bytes can still
+// show it.
 func validateText(raw string) (text, errMessage string) {
 	text = strings.TrimSpace(raw)
 	if text == "" {
@@ -230,12 +231,13 @@ func validateText(raw string) (text, errMessage string) {
 	return text, ""
 }
 
-// canonicalChannels validates and canonicalises extra_channels (§8.3):
-// max 16 names, de-duplicated and sorted so a set of names has exactly one
-// stored form (the store re-asserts that invariant on write). Every name
-// must exist in channels — disabled included, existence is what matters —
-// except those in carried, the names already stored on the row (§8.3's
-// PATCH asymmetry: an orphan can be carried forward, never introduced).
+// canonicalChannels validates and canonicalizes extra_channels (§8.3):
+// max 16 names, de-duplicated and sorted so that a set of names has exactly
+// one stored form. The store re-asserts that invariant on write. Every name
+// must exist in channels, disabled ones included, because existence is what
+// matters. The exception is the names in carried, which are already stored
+// on the row. This is §8.3's PATCH asymmetry: an orphan can be carried
+// forward, never introduced.
 func (s *Server) canonicalChannels(ctx context.Context, names []string, carried []string) ([]string, string, error) {
 	if len(names) == 0 {
 		return nil, "", nil

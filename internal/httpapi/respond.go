@@ -12,15 +12,16 @@ import (
 	"unicode/utf8"
 )
 
-// internalErrorMessage is the fixed 5xx sentence (§8.3): the §9.2 toast
+// internalErrorMessage is the fixed 5xx sentence (§8.3). The §9.2 toast
 // and the §10.4 log both read the response body, so an internal error
-// string here would have no single place to be redacted. The real error
+// string here has no single place where it can be redacted. The real error
 // belongs in the request's log line.
 const internalErrorMessage = "internal error, see the server log"
 
 // writeError writes the §8.3 one-field shape. The message reaches the UI
-// verbatim, so write it for a human — lowercase sentence. For statuses of
-// 500 and above the message is ignored and the fixed sentence is sent.
+// verbatim, so write it for a human, as a lowercase sentence. For statuses
+// of 500 and above, writeError ignores the message and sends the fixed
+// sentence.
 func writeError(w http.ResponseWriter, status int, message string) {
 	if status >= 500 {
 		message = internalErrorMessage
@@ -34,17 +35,17 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	json.NewEncoder(w).Encode(body)
 }
 
-// decodeBody reads the request body as exactly one JSON value into v,
-// rejecting unknown fields, and returns the §8.3 message for the client, or
+// decodeBody reads the request body as exactly one JSON value into v and
+// rejects unknown fields. It returns the §8.3 message for the client, or
 // "" on success. Every handler with a body comes through here, so the rules
 // hold everywhere at once:
 //
-//   - invalid UTF-8 and lone surrogate escapes (\ud800) are refused up
-//     front, because encoding/json never refuses them: it decodes both to
-//     U+FFFD, silently, and the reminder would be stored altered;
-//   - a json.Decoder stops after the first value, so `{…} junk` would
-//     otherwise decode cleanly;
-//   - an unknown field is named, the same way PATCH names its leftovers.
+//   - It refuses invalid UTF-8 and lone surrogate escapes (\ud800) up
+//     front. encoding/json never refuses them: it silently decodes both to
+//     U+FFFD, and the store then keeps an altered reminder.
+//   - A json.Decoder stops after the first value. Without a check for more
+//     input, `{…} junk` decodes cleanly.
+//   - It names an unknown field, the same way PATCH names its leftovers.
 //
 // DisallowUnknownFields has no effect on PATCH's map decode, which checks
 // its leftovers itself.

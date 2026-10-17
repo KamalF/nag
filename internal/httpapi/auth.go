@@ -11,32 +11,33 @@ import (
 	"time"
 )
 
-// §8.1 — every piece of the cookie is pinned, because two readings of it
-// are two implementations that cannot verify each other's cookies.
+// §8.1 pins every piece of the cookie. Two readings of it give two
+// implementations that cannot verify each other's cookies.
 const (
 	cookieName = "nag_session"
 
-	// cookieMaxAge is the one constant both the issuer and the renewal
-	// check read — hardcoding its derived numbers elsewhere breaks
-	// silently the day Max-Age changes.
+	// cookieMaxAge is the one constant that both the issuer and the renewal
+	// check read. A hardcoded copy of its derived numbers elsewhere breaks
+	// silently on the day that Max-Age changes.
 	cookieMaxAge = 365 * 24 * time.Hour
 
-	// renewAfter: a valid cookie older than this is re-issued on the way
-	// out, so a pinned tab never logs out.
+	// renewAfter: if a valid cookie is older than this, the response carries
+	// a new one, so a pinned tab never logs out.
 	renewAfter = 30 * 24 * time.Hour
 )
 
-// cookieKey derives the signing key from NAG_TOKEN: the token is the key,
-// the constant is the message. No second secret to manage, and rotating
-// NAG_TOKEN invalidates every cookie — the log-out-everywhere lever (§8.1).
+// cookieKey derives the signing key from NAG_TOKEN: the token is the key
+// and the constant is the message. There is no second secret to manage.
+// Rotating NAG_TOKEN invalidates every cookie, which is the way to log out
+// everywhere (§8.1).
 func cookieKey(token string) []byte {
 	m := hmac.New(sha256.New, []byte(token))
 	m.Write([]byte("nag-cookie-v1"))
 	return m.Sum(nil)
 }
 
-// signExpiry MACs the expiry as "v1|" + its decimal ASCII form, byte for
-// byte — never big-endian bytes (§8.1).
+// signExpiry computes the MAC of the expiry as "v1|" + its decimal ASCII
+// form, byte for byte. It never uses big-endian bytes (§8.1).
 func signExpiry(key []byte, exp string) []byte {
 	m := hmac.New(sha256.New, key)
 	m.Write([]byte("v1|" + exp))
@@ -79,8 +80,9 @@ func decodeSession(key []byte, value string, now time.Time) (expiry time.Time, o
 	return expiry, true
 }
 
-// requireAuth guards /api/*: a bearer token or a session cookie (§8.1).
-// A cookie inside the renewal window is re-issued on the way out.
+// requireAuth guards /api/*: a request needs a bearer token or a session
+// cookie (§8.1). If a cookie is inside the renewal window, the response
+// carries a new one.
 func (s *Server) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.bearerOK(r) {
@@ -90,8 +92,8 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 		if c, err := r.Cookie(cookieName); err == nil {
 			now := time.Now()
 			if expiry, ok := decodeSession(s.cookieKey, c.Value, now); ok {
-				// "older than 30 days" computed from the expiry the cookie
-				// carries — it holds nothing else.
+				// The cookie holds only its expiry, so "older than 30 days" is
+				// computed from that expiry.
 				if expiry.Sub(now) < cookieMaxAge-renewAfter {
 					s.setSessionCookie(w, now)
 				}
@@ -103,8 +105,8 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 	})
 }
 
-// bearerOK accepts `Authorization: Bearer <NAG_TOKEN>` — the permanent
-// path for curl, /api/push/test, and the future bookmarklet (§8.1).
+// bearerOK accepts `Authorization: Bearer <NAG_TOKEN>`. This is the
+// permanent path for curl, /api/push/test, and the future bookmarklet (§8.1).
 func (s *Server) bearerOK(r *http.Request) bool {
 	auth := r.Header.Get("Authorization")
 	token, found := strings.CutPrefix(auth, "Bearer ")
@@ -112,9 +114,9 @@ func (s *Server) bearerOK(r *http.Request) bool {
 }
 
 // handleLogin exchanges {token} for the session cookie. On failure it
-// sleeps and serialises through a mutex — the entire rate limit, and
-// sufficient for one user behind HTTPS (§8.1). The submitted token is
-// never logged (§10.4).
+// sleeps and serializes through a mutex. That is the entire rate limit,
+// and it is sufficient for one user behind HTTPS (§8.1). The handler never
+// logs the submitted token (§10.4).
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Token string `json:"token"`
@@ -131,14 +133,15 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// failLoginSlowly is the §8.1 rate limit: failures are serialised and each
+// failLoginSlowly is the §8.1 rate limit: failures are serialized and each
 // holds the slot for ~250 ms. Both waits watch the request's context, so a
-// client that gave up leaves the queue at once — a mutex and a bare sleep
-// would keep every abandoned wrong-token request alive, conn and all, until
-// its turn came, which an unauthenticated flood can grow without bound.
+// client that gave up leaves the queue at once. With a mutex and a bare
+// sleep, every abandoned wrong-token request stays alive, with its
+// connection, until its turn comes. An unauthenticated flood can grow that
+// queue without bound.
 func (s *Server) failLoginSlowly(w http.ResponseWriter, r *http.Request) {
-	// the 401 is written either way, so the §10.4 line records what the
-	// request was even when nobody is left to read the answer
+	// The 401 is written in both cases, so the §10.4 line records what the
+	// request was, even when nobody is left to read the answer.
 	defer writeError(w, http.StatusUnauthorized, "wrong token")
 	select {
 	case s.loginSlot <- struct{}{}:
@@ -155,8 +158,8 @@ func (s *Server) failLoginSlowly(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	// clearing must match the issue-time attributes, so both go through
-	// sessionCookie
+	// The clearing cookie must have the same attributes as the issued one,
+	// so both come from sessionCookie.
 	http.SetCookie(w, sessionCookie("", -1))
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -174,10 +177,10 @@ func sessionCookie(value string, maxAge int) *http.Cookie {
 		Path:     "/",
 		MaxAge:   maxAge,
 		HttpOnly: true,
-		// Unconditional: behind Caddy the app sees plain HTTP, so deriving
-		// this from r.TLS would silently ship a non-Secure cookie (§8.1).
+		// Unconditional: behind Caddy the app sees plain HTTP, so a value
+		// taken from r.TLS silently sends a non-Secure cookie (§8.1).
 		Secure: true,
-		// Lax, not Strict — a notification click into a fresh tab must
+		// Lax, not Strict: a notification click into a fresh tab must
 		// arrive authenticated.
 		SameSite: http.SameSiteLaxMode,
 	}
