@@ -1,6 +1,6 @@
 # Required, not hygiene (§10): the build context is the project directory,
 # which also holds nag.env (the VAPID private key) and data/ (the database).
-# A bare COPY . . would bake both into the cached builder layer.
+# Without this file, a bare COPY . . bakes both into the cached builder layer.
 nag.env
 .env
 data/
@@ -8,7 +8,5 @@ config/
 *.db*
 .git/
 *.md
-reminder-theme-preview.html
-reminder-datetime-picker.html
 docs/
 .claude/
