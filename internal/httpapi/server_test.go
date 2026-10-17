@@ -46,9 +46,9 @@ func testServerWithDB(t *testing.T, logs io.Writer) (*Server, string) {
 		Config: config.NewLive("", testConfig(), testVAPIDPublic),
 		Web:    web,
 		Token:  testToken,
-		// serve always wires a sender, so a nil one is a test-only shape.
-		// The default keeps POST /api/push/test from a nil panic in a test
-		// that did not think about push at all.
+		// The serve command always passes a sender, so a nil sender
+		// happens only in tests. This default stops a nil-pointer panic on
+		// POST /api/push/test in a test that does not set up push.
 		Push: &fakePush{results: []notify.SendResult{{Status: 201}}},
 		Log:  slog.New(slog.NewTextHandler(logs, nil)),
 	})

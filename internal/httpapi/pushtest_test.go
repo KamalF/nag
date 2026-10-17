@@ -13,9 +13,9 @@ import (
 	"github.com/KamalF/nag/internal/store"
 )
 
-// fakePush answers as the §7.1 ladder does, with one canned verdict per
-// call. delay lets a test exhaust the send budget without spending twelve
-// real seconds on it.
+// fakePush answers as the §7.1 response handling does, with one canned
+// verdict per call. delay lets a test exhaust the send budget without
+// spending twelve real seconds on it.
 type fakePush struct {
 	results  []notify.SendResult
 	delay    time.Duration
@@ -38,7 +38,8 @@ func (f *fakePush) SendTo(ctx context.Context, perSend time.Duration, payload []
 	return res
 }
 
-// pushTestServer stores subs endpoints and wires the fake sender in.
+// pushTestServer stores one subscription per endpoint and connects the
+// fake sender.
 func pushTestServer(t *testing.T, logs io.Writer, push *fakePush, endpoints ...string) *Server {
 	t.Helper()
 	s := testServer(t, logs)
@@ -63,8 +64,8 @@ func pushTestResults(t *testing.T, s *Server) (int, []pushTestResult) {
 	return rec.Code, body.Results
 }
 
-// The happy path, and the two things §7.5 pins about it: the endpoint comes
-// back truncated, and the payload is the fixed n == 1 form with no id.
+// The success path, and the two facts that §7.5 pins for it: the endpoint
+// comes back truncated, and the payload is the fixed n == 1 form with no id.
 func TestPushTestSendsThePinnedPayload(t *testing.T) {
 	push := &fakePush{results: []notify.SendResult{{Status: 201}}}
 	s := pushTestServer(t, nil, push, "https://push.example.net/send/AbCdEfGh12345678")
@@ -98,8 +99,8 @@ func TestPushTestSendsThePinnedPayload(t *testing.T) {
 	}
 }
 
-// "deleted: true on a 403 is the fastest available answer to 'is this
-// browser still bound to the keypair I rotated away from'."
+// deleted: true on a 403 is the fastest answer to the question "is this
+// browser still bound to the keypair that I rotated away from?"
 func TestPushTestReportsStaleKeyDeletion(t *testing.T) {
 	push := &fakePush{results: []notify.SendResult{
 		{Status: 403, Deleted: true, Err: "stale vapid key"},
@@ -131,8 +132,8 @@ func TestPushTestReportsNullStatusOnATransportFailure(t *testing.T) {
 	}
 }
 
-// "A subscription list with zero rows returns {"results":[]} and a 200,
-// not an error; that is itself the answer to 'is anything subscribed'."
+// A subscription list with zero rows returns {"results":[]} and a 200, not
+// an error. That result is the answer to "is anything subscribed?"
 func TestPushTestWithNoSubscriptions(t *testing.T) {
 	s := pushTestServer(t, nil, &fakePush{results: []notify.SendResult{{Status: 201}}})
 
@@ -155,7 +156,7 @@ func TestPushTestBudgetExhaustionStillReportsEveryRow(t *testing.T) {
 		"https://a.example.net/send/AAAAAAAA",
 		"https://b.example.net/send/BBBBBBBB",
 		"https://c.example.net/send/CCCCCCCC")
-	s.pushBudget = 20 * time.Millisecond // the first send eats it whole
+	s.pushBudget = 20 * time.Millisecond // the first send uses all of it
 
 	code, results := pushTestResults(t, s)
 
@@ -195,17 +196,18 @@ func TestPushTestLogsAttemptedAndDeletedCounts(t *testing.T) {
 	}
 }
 
-// §7.5's budget is derived from WriteTimeout, not stated as a number, so
-// that tuning the write deadline cannot quietly leave this handler spending
-// longer on third-party sockets than the deadline it must answer within.
-// The two checks catch different things. The first cannot fail while the
-// derivation stands, because that is what the derivation is for. It is here
-// to catch a restatement of the budget as a literal that no longer fits.
+// §7.5's budget is derived from WriteTimeout, not stated as a number. So a
+// change to WriteTimeout cannot silently let this handler spend more time on
+// third-party sockets than the deadline that it must answer within. The two
+// checks catch different things. The first check cannot fail while the
+// budget is derived from WriteTimeout, because the derivation exists for
+// exactly that. The check is here to catch a later change that writes the
+// budget as a literal number that no longer fits.
 func TestPushTestBudgetLeavesHeadroomUnderWriteTimeout(t *testing.T) {
 	if pushTestBudget >= WriteTimeout {
 		t.Fatalf("budget %s does not fit under WriteTimeout %s", pushTestBudget, WriteTimeout)
 	}
-	// This is the half that the derivation cannot guarantee. If WriteTimeout
+	// This is the check that the derivation cannot guarantee. If WriteTimeout
 	// is small enough, the budget after the headroom is zero or negative.
 	// Then the handler's deadline has already expired at its first send, and
 	// every subscription comes back "not attempted" under a 200. That is a

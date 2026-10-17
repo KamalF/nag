@@ -13,8 +13,8 @@ import (
 
 // handleSubscribe is POST /api/push/subscribe (§8.2). It shape-checks all
 // three cryptographic fields, upserts by endpoint, and answers 204 with no
-// body. The API has no subscription object, so a body can only carry an
-// echo of the request.
+// body. The API has no subscription object, so a response body can only
+// echo the request.
 func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Endpoint string `json:"endpoint"`
@@ -33,8 +33,9 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// This is the same shape check that §5.1 applies to the server's own
-	// keys. The table accepts a mangled value here, but nothing after it
-	// does: it surfaces as a send failure on every sweep (§8.2).
+	// keys. The database table accepts a mangled value, but nothing after
+	// the table does: the bad value shows up as a send failure on every
+	// sweep (§8.2).
 	for _, check := range []struct {
 		field, value string
 		wantBytes    int
@@ -63,8 +64,9 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleUnsubscribe is POST /api/push/unsubscribe: {endpoint} → 204,
-// for a known endpoint or not. If a client cannot call this, its row
-// strands. The next 404/410 deletes that row anyway (§7.1).
+// whether the endpoint is known or not. If a client cannot call this
+// endpoint, its row stays in the table. The next 404/410 from the push
+// service deletes that row anyway (§7.1).
 func (s *Server) handleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Endpoint string `json:"endpoint"`
@@ -90,8 +92,8 @@ func endpointError(endpoint string) string {
 	return ""
 }
 
-// base64FieldError wants unpadded base64url that decodes to exactly
-// wantBytes. Anything else is rejected with a 400 that names the field
+// base64FieldError accepts only unpadded base64url that decodes to exactly
+// wantBytes bytes. Anything else is rejected with a 400 that names the field
 // (§8.2). CR/LF is rejected before decoding, because Go's decoder ignores
 // those bytes silently.
 func base64FieldError(field, value string, wantBytes int) string {

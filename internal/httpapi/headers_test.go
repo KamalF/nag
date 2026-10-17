@@ -40,7 +40,8 @@ func TestSecurityHeadersOnEveryResponse(t *testing.T) {
 
 // §10.2: a browser mutation from another origin is refused, a sibling
 // subdomain included (same site, so SameSite=Lax sends the cookie). A
-// same-origin one, or one with no browser headers at all (curl), passes.
+// same-origin mutation, or one with no browser headers at all (curl),
+// passes.
 func TestCrossOriginMutationsRefused(t *testing.T) {
 	h := testServer(t, nil).Handler()
 	created := createReminder(t, h, `{"text":"x","preset":"30min"}`)
@@ -110,8 +111,9 @@ func TestCachingSplit(t *testing.T) {
 	}
 }
 
-// §10.2's CSRF rule: a bodied mutation needs application/json. A bodyless
-// one (/done, the push test) does not, and neither does /logout.
+// §10.2's CSRF rule: a mutation with a body needs application/json. A
+// mutation without a body (/done, the push test) does not, and neither does
+// /logout.
 func TestJSONContentTypeRule(t *testing.T) {
 	h := testServer(t, nil).Handler()
 	created := createReminder(t, h, `{"text":"x","preset":"30min"}`)

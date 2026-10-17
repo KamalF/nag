@@ -13,9 +13,9 @@ import (
 )
 
 // internalErrorMessage is the fixed 5xx sentence (§8.3). The §9.2 toast
-// and the §10.4 log both read the response body, so an internal error
-// string here has no single place where it can be redacted. The real error
-// belongs in the request's log line.
+// shows the response body, and the handler also logs the error. If the body
+// carried the internal error string, that string reached both places, with
+// no single place to redact it. The real error belongs in the server log.
 const internalErrorMessage = "internal error, see the server log"
 
 // writeError writes the §8.3 one-field shape. The message reaches the UI
@@ -37,22 +37,23 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 
 // decodeBody reads the request body as exactly one JSON value into v and
 // rejects unknown fields. It returns the §8.3 message for the client, or
-// "" on success. Every handler with a body comes through here, so the rules
-// hold everywhere at once:
+// "" on success. Every handler that reads a body calls decodeBody, so these
+// rules apply to all of them:
 //
-//   - It refuses invalid UTF-8 and lone surrogate escapes (\ud800) up
-//     front. encoding/json never refuses them: it silently decodes both to
-//     U+FFFD, and the store then keeps an altered reminder.
+//   - It refuses invalid UTF-8 and lone surrogate escapes (\ud800) before
+//     it decodes. encoding/json never refuses them: it silently decodes both
+//     to U+FFFD, and the store then saves a changed reminder text.
 //   - A json.Decoder stops after the first value. Without a check for more
-//     input, `{…} junk` decodes cleanly.
-//   - It names an unknown field, the same way PATCH names its leftovers.
+//     input, `{…} junk` decodes with no error.
+//   - Its message names an unknown field, the same way that PATCH names its
+//     leftover keys.
 //
-// DisallowUnknownFields has no effect on PATCH's map decode, which checks
-// its leftovers itself.
+// DisallowUnknownFields has no effect on PATCH's map decode. PATCH checks
+// its leftover keys itself.
 func decodeBody(r *http.Request, v any) string {
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
-		return "malformed json body" // includes the 16 KB cap (§8.2)
+		return "malformed json body" // a body over the 16 KB cap also fails here (§8.2)
 	}
 	if !utf8.Valid(raw) || hasLoneSurrogate(raw) {
 		return "request body is not valid utf-8"

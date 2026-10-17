@@ -16,9 +16,9 @@ const testToken = "test-token-of-sufficient-length"
 
 // The §8.1 encoding, rebuilt independently: exp as a decimal ASCII string,
 // k = HMAC(NAG_TOKEN, "nag-cookie-v1"), mac = HMAC(k, "v1|"+exp), value
-// b64(exp)+"."+b64(mac) in unpadded base64url. Two readings of §8.1 give
-// two implementations that cannot verify each other's cookies. This test
-// is the second reading.
+// b64(exp)+"."+b64(mac) in unpadded base64url. Two different readings of
+// §8.1 give two implementations that cannot verify each other's cookies.
+// This test is the second reading.
 func TestCookieEncodingIsPinned(t *testing.T) {
 	expiry := time.Unix(1786742400, 0)
 	exp := "1786742400"
@@ -122,12 +122,12 @@ func TestLoginWrongToken(t *testing.T) {
 }
 
 // A wrong-token request that the client abandoned must leave the §8.1 queue
-// at once. If it stays behind the slot or the sleep, every dropped
+// at once. If it keeps waiting for the slot or the sleep, every dropped
 // connection of an unauthenticated flood stays alive until its turn.
 func TestAbandonedFailedLoginLeavesTheQueue(t *testing.T) {
 	for _, tt := range []struct {
 		name     string
-		slotHeld bool // true: waiting for the slot; false: holding it, asleep
+		slotHeld bool // true: waiting for the slot. false: holding the slot, asleep
 	}{{"waiting for the slot", true}, {"holding the slot", false}} {
 		t.Run(tt.name, func(t *testing.T) {
 			s := testServer(t, nil)

@@ -35,7 +35,7 @@ func TestConfigProjection(t *testing.T) {
 			t.Errorf("preset %v carries more than {key,label,quick}", p)
 		}
 	}
-	// the §5.5 two-hash argument: the client must see none of these
+	// §5.5 (two hashes): the client must see none of these fields
 	for _, forbidden := range []string{"kind", "offset", "\"at\"", "days", "weekday",
 		"same_day_ok", "timezone", "retention_days"} {
 		if strings.Contains(rec.Body.String(), forbidden) {

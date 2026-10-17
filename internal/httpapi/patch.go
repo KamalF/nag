@@ -15,9 +15,10 @@ import (
 )
 
 // handlePatch is PATCH /api/reminders/{id}, the only write path for both
-// a correction and a re-snooze (§8.4). Presence detection needs a map
-// decode (§8.3). An absent key means unchanged, and null and empty are
-// answers of their own. A struct decode cannot tell those apart.
+// a correction and a re-snooze (§8.4). The handler decodes into a map,
+// because it must detect which keys are present (§8.3). An absent key means
+// "unchanged", and a null or empty value has its own meaning. A struct
+// decode cannot tell an absent key from a null value.
 func (s *Server) handlePatch(w http.ResponseWriter, r *http.Request) {
 	id, ok := reminderID(r)
 	if !ok {
@@ -45,9 +46,10 @@ func (s *Server) handlePatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// One clock read per request (§8.2): the preset resolves from it and the
-	// backdated check compares against it. So a chip tapped just before its
-	// own target cannot resolve to a moment that a second read calls past.
+	// One clock read per request (§8.2): the preset resolves from it, and the
+	// check for a backdated due_at compares against it. So a chip tapped just
+	// before its own target time cannot resolve to a time that a second,
+	// later clock read treats as past.
 	now := time.Now()
 	upd, errMessage, err := s.buildUpdate(r.Context(), fields, current, s.live.Load(), now)
 	if err != nil {
@@ -76,9 +78,9 @@ func (s *Server) handlePatch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toReminderResponse(rem))
 }
 
-// buildUpdate consumes the known keys from fields and rejects what is
-// left. The error names the lexically first leftover. Go randomizes map
-// iteration, so the code chooses "the first one" explicitly (§8.3).
+// buildUpdate consumes the known keys from fields and rejects any key that
+// is left. The error names the lexically first leftover key. Go randomizes
+// map iteration, so the code chooses "the first one" explicitly (§8.3).
 func (s *Server) buildUpdate(ctx context.Context, fields map[string]json.RawMessage, current store.Reminder,
 	snap *config.Snapshot, now time.Time) (store.ReminderUpdate, string, error) {
 	var upd store.ReminderUpdate
@@ -131,8 +133,8 @@ func (s *Server) buildUpdate(ctx context.Context, fields map[string]json.RawMess
 				return upd, "extra_channels must be an array of names or null", nil
 			}
 		}
-		// A name already stored on the row is carried and never re-checked.
-		// This is the orphan asymmetry (§8.3).
+		// A name already stored on the row is kept and is not checked again.
+		// This is §8.3's PATCH asymmetry for orphan channels.
 		canonical, errMessage, err := s.canonicalChannels(ctx, names, current.ExtraChannels)
 		if err != nil || errMessage != "" {
 			return upd, errMessage, err

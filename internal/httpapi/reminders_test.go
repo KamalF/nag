@@ -228,9 +228,9 @@ func TestCreateLogsTheNewID(t *testing.T) {
 	}
 }
 
-// §10.4's line carries the affected id once. setLogID sets the "id" field of
-// setLogAttrs. setLogAttrs appends (it used to overwrite a single slot), so
-// a handler that sets the id twice now prints two. The test checks every
+// §10.4's line carries the affected id once. setLogID sets the "id" field
+// through setLogAttrs. setLogAttrs appends (it used to overwrite a single
+// slot), so a handler that sets the id twice now prints two. The test checks every
 // mutating endpoint that names a reminder, because the invariant is a
 // property of each handler, not of the mechanism that they share.
 func TestMutatingRequestsLogExactlyOneID(t *testing.T) {

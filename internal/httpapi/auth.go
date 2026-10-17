@@ -11,14 +11,14 @@ import (
 	"time"
 )
 
-// §8.1 pins every piece of the cookie. Two readings of it give two
-// implementations that cannot verify each other's cookies.
+// §8.1 pins every piece of the cookie. Two different readings of the cookie
+// format give two implementations that cannot verify each other's cookies.
 const (
 	cookieName = "nag_session"
 
 	// cookieMaxAge is the one constant that both the issuer and the renewal
-	// check read. A hardcoded copy of its derived numbers elsewhere breaks
-	// silently on the day that Max-Age changes.
+	// check read. If another place hardcodes a number derived from it, that
+	// place breaks silently on the day that Max-Age changes.
 	cookieMaxAge = 365 * 24 * time.Hour
 
 	// renewAfter: if a valid cookie is older than this, the response carries
@@ -36,8 +36,8 @@ func cookieKey(token string) []byte {
 	return m.Sum(nil)
 }
 
-// signExpiry computes the MAC of the expiry as "v1|" + its decimal ASCII
-// form, byte for byte. It never uses big-endian bytes (§8.1).
+// signExpiry computes the MAC over the message "v1|" + the expiry in decimal
+// ASCII, byte for byte. It never uses the expiry as big-endian bytes (§8.1).
 func signExpiry(key []byte, exp string) []byte {
 	m := hmac.New(sha256.New, key)
 	m.Write([]byte("v1|" + exp))
@@ -113,10 +113,10 @@ func (s *Server) bearerOK(r *http.Request) bool {
 	return found && subtle.ConstantTimeCompare([]byte(token), []byte(s.token)) == 1
 }
 
-// handleLogin exchanges {token} for the session cookie. On failure it
-// sleeps and serializes through a mutex. That is the entire rate limit,
-// and it is sufficient for one user behind HTTPS (§8.1). The handler never
-// logs the submitted token (§10.4).
+// handleLogin exchanges {token} for the session cookie. On failure,
+// failLoginSlowly serializes the failures and sleeps. That is the entire
+// rate limit, and it is sufficient for one user behind HTTPS (§8.1). The
+// handler never logs the submitted token (§10.4).
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Token string `json:"token"`
@@ -134,14 +134,15 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 // failLoginSlowly is the §8.1 rate limit: failures are serialized and each
-// holds the slot for ~250 ms. Both waits watch the request's context, so a
-// client that gave up leaves the queue at once. With a mutex and a bare
-// sleep, every abandoned wrong-token request stays alive, with its
-// connection, until its turn comes. An unauthenticated flood can grow that
-// queue without bound.
+// holds the slot for ~250 ms. Both waits (for the slot and for the sleep)
+// stop when the request's context ends, so a client that gave up leaves the
+// queue at once. With a mutex and a bare sleep instead, every abandoned
+// wrong-token request stays alive, with its connection, until its turn
+// comes. Then an unauthenticated flood can grow that queue without bound.
 func (s *Server) failLoginSlowly(w http.ResponseWriter, r *http.Request) {
-	// The 401 is written in both cases, so the §10.4 line records what the
-	// request was, even when nobody is left to read the answer.
+	// The deferred call writes the 401 also when the client gave up. So the
+	// §10.4 line records the request, even when nobody is left to read the
+	// answer.
 	defer writeError(w, http.StatusUnauthorized, "wrong token")
 	select {
 	case s.loginSlot <- struct{}{}:
@@ -169,7 +170,7 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, now time.Time) {
 	http.SetCookie(w, sessionCookie(value, int(cookieMaxAge/time.Second)))
 }
 
-// sessionCookie is the one place the §8.1 attributes are written.
+// sessionCookie is the one place that writes the §8.1 attributes.
 func sessionCookie(value string, maxAge int) *http.Cookie {
 	return &http.Cookie{
 		Name:     cookieName,
@@ -177,10 +178,10 @@ func sessionCookie(value string, maxAge int) *http.Cookie {
 		Path:     "/",
 		MaxAge:   maxAge,
 		HttpOnly: true,
-		// Unconditional: behind Caddy the app sees plain HTTP, so a value
-		// taken from r.TLS silently sends a non-Secure cookie (§8.1).
+		// Always set. Behind Caddy, the app sees plain HTTP. If the value
+		// came from r.TLS, the app silently sent a non-Secure cookie (§8.1).
 		Secure: true,
-		// Lax, not Strict: a notification click into a fresh tab must
+		// Lax, not Strict: a notification click that opens a fresh tab must
 		// arrive authenticated.
 		SameSite: http.SameSiteLaxMode,
 	}

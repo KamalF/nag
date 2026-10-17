@@ -11,10 +11,11 @@ import (
 
 // contentSecurityPolicy is §10.2's pinned policy, byte for byte. The app
 // loads nothing from another origin, so a strict policy costs nothing and
-// closes the injected-script class. data: on img-src is for the canvas
-// favicon. font-src 'none' is deliberate: fonts are system stacks, which
-// CSP never sees, so no font request is legitimate. style-src 'self' also
-// forbids a style attribute in the markup (§9.7), but leaves CSSOM alone.
+// blocks the whole class of injected scripts. data: on img-src is for the
+// canvas favicon. font-src 'none' is deliberate: fonts are system stacks,
+// which CSP never sees, so no font request is legitimate. style-src 'self'
+// also forbids a style attribute in the markup (§9.7). It does not block
+// style changes that JS makes through CSSOM.
 const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self'; " +
 	"img-src 'self' data:; font-src 'none'; connect-src 'self'; " +
 	"object-src 'none'; base-uri 'none'; form-action 'self'; " +
@@ -56,12 +57,12 @@ func assetETags(web fs.FS) map[string]string {
 	return tags
 }
 
-// caching is §10.2's split. The embedded assets get no-cache plus an ETag
-// derived from their content. That costs one cheap revalidation per load,
-// and a deploy takes effect at once. With a max-age, a tab pinned for a
-// year ends up running last year's code. Once the ETag header is set, the
-// file server answers If-None-Match itself. Everything else, /api/*
-// included, is no-store.
+// caching applies the two cache rules of §10.2. The embedded assets get
+// no-cache plus an ETag derived from their content. That costs one cheap
+// revalidation per load, and a deploy takes effect at once. With a max-age
+// instead, a tab pinned for a year runs last year's code. Once the ETag
+// header is set, the file server answers If-None-Match itself. Everything
+// else, /api/* included, is no-store.
 func (s *Server) caching(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if tag, ok := s.etags[r.URL.Path]; ok {
@@ -74,13 +75,14 @@ func (s *Server) caching(next http.Handler) http.Handler {
 	})
 }
 
-// sameOriginOnly is §10.2's first CSRF rule. On every mutating method, it
+// sameOriginOnly is §10.2's first CSRF rule. For every mutating method, it
 // refuses a browser request that is not same-origin. The standard library
 // does the check, with Sec-Fetch-Site (or Origin against Host). SameSite=Lax
-// alone is not enough because it is about the site: a page on a sibling
-// subdomain still gets the cookie sent with an empty form POST to /done.
-// A request with neither header is curl or another non-browser client.
-// That client authenticates with the bearer token and passes.
+// alone is not enough, because it compares sites, not origins. A page on a
+// sibling subdomain is same-site, so the browser still sends the cookie
+// with an empty form POST from that page to /done. A request with neither
+// header comes from curl or another non-browser client. Such a client
+// authenticates with the bearer token, and this check lets it pass.
 func sameOriginOnly(next http.Handler) http.Handler {
 	protection := http.NewCrossOriginProtection()
 	protection.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -90,11 +92,12 @@ func sameOriginOnly(next http.Handler) http.Handler {
 }
 
 // requireJSONBody is §10.2's second CSRF rule: a mutating request that
-// carries a body must say application/json, which an HTML form cannot
-// produce. Bodyless mutations (/done, /undone, DELETE, the push test) are
-// exempt, so their curl invocations stay bare. In a browser, sameOriginOnly
-// covers them. /logout is exempt outright: the worst that a forged form can
-// do there is log you out of your own browser.
+// carries a body must have the Content-Type application/json, which an
+// HTML form cannot produce. Bodyless mutations (/done, /undone, DELETE, the
+// push test) are exempt, so their curl commands need no Content-Type
+// header. In a browser, sameOriginOnly protects them. /logout is always
+// exempt: the worst that a forged form can do there is log you out of your
+// own browser.
 func requireJSONBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if mutating(r.Method) && r.ContentLength != 0 && r.URL.Path != "/logout" {
