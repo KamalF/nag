@@ -34,6 +34,7 @@ Dependencies and their versions are in `go.mod`.
 
 - The binary is static (`CGO_ENABLED=0`) and runs in the scratch image (§10). For this reason the SQLite driver is the pure-Go `modernc.org/sqlite`. (untested)
 - The binary imports `time/tzdata`, because the scratch image has no tzdata. (test: TestMainEmbedsTheTimezoneDatabase)
+- The frontend has no build step. `web/` is hand-written HTML, CSS and JS, embedded and served as written (ADR-009). (untested)
 - Logs: `log/slog` text handler to stderr. Logs are the only observability. §10.4 says which events get a line. (partly tested: the log-line assertions of the package tests)
 - An HTTPS reverse proxy on the host forwards to `127.0.0.1:8080`. The caddy-docker-proxy labels are in an opt-in Compose file (§10). (untested)
 - HTTPS is required for any deployment that another device reaches, because service workers and Web Push need a secure context. Browsers treat `localhost` as secure, so a try on the same laptop works over plain HTTP (README, "Try it on your laptop"). (untested)
@@ -44,7 +45,7 @@ Dependencies and their versions are in `go.mod`.
 
 - `sw.js` is embedded at the root of `web/` and served as `/sw.js` (§9.5). (test: TestServiceWorkerIsEmbeddedAtTheRoot, TestCachingSplit)
 - `web/` ships `manifest.webmanifest` (§9.3). (test: TestManifestPinnedValues, TestManifestContentType)
-- No subcommand has command-line flags. Each value that varies is an environment variable (§5.1) or a TOML key (§5.3). Why: a flag is a third place to look for the same value, and Compose then hides it in `command:`. (partly tested: TestDispatch)
+- No subcommand has command-line flags. Each value that varies is an environment variable (§5.1) or a TOML key (§5.3). (ADR-007) (partly tested: TestDispatch)
 - A missing or unknown subcommand, or `-h`, prints the usage block below to stderr and exits `2`. It never panics. (test: TestDispatch)
 - `main` has no default subcommand. The default is the Dockerfile's `CMD ["serve"]` (§10) and nowhere else. (partly tested: TestDispatch)
 
@@ -225,8 +226,8 @@ More rules:
 ## 6. Preset evaluation
 
 - Presets resolve in `general.timezone`, also when you travel. Build each time with `time.Date(y, m, d, hh, mm, 0, 0, loc)`, so that the stdlib handles DST, and convert the result to UTC. (test: TestClockAcrossSpringForward, TestEvaluateReturnsUTC)
-- **The server schedules, the browser displays.** The client formats each instant in the browser's timezone and locale. The picker reads the wall-clock time that you choose as browser-local (§9.6). From a phone two zones away, the picker gives 09:00 on your watch and the `tomorrow` chip gives 09:00 at the server. This is accepted: foreign wall-clock times are worse for a single user. Clock skew is still corrected (§9.3). (partly tested: TestWorkerFormatterMatchesThePage)
-- A preset's `label` is a config string, never adjusted for the timezone. From a phone two zones east, "Tomorrow 9:00" makes a row that reads "tomorrow at 10:00". Why: a client-side label needs `kind`, `at`, `days` and the timezone, which is a second evaluator in another language. (untested)
+- **The server schedules, the browser displays.** The client formats each instant in the browser's timezone and locale. The picker reads the wall-clock time that you choose as browser-local (§9.6). From a phone two zones away, the picker gives 09:00 on your watch and the `tomorrow` chip gives 09:00 at the server. Clock skew is still corrected (§9.3). (ADR-006) (partly tested: TestWorkerFormatterMatchesThePage)
+- A preset's `label` is a config string, never adjusted for the timezone. From a phone two zones east, "Tomorrow 9:00" makes a row that reads "tomorrow at 10:00". (ADR-006) (untested)
 - **`offset`**: `due = now + offset`. No rounding. Pure elapsed duration: "3 hours" is three hours, also across a DST change. (test: TestOffsetAcrossMidnight, TestOffsetAcrossSpringForwardIsPureDuration)
 - **`clock`**: take today's date in `loc`, add `days` calendar days (never `days*24h`), and build the time at `at`. If the result is `<= now`, add one more calendar day and rebuild. "Tomorrow 09:00" is 09:00 across a DST change. (test: TestClockAcrossSpringForward, TestClockAcrossFallBack, TestClockAt2350, TestClockDaysZeroBothSidesOfAt)
 - **`weekday`**: the next date whose weekday matches, at `at`, built the same way. Today counts only if it matches, `same_day_ok = true`, and `at` is still in the future. Otherwise take the next match strictly after today: with `same_day_ok = false`, "next Monday" on a Monday is +7 days, as in Slack. (test: TestWeekdayOnItsOwnDay, TestWeekdayLaterThisWeek)
@@ -292,7 +293,7 @@ More rules:
 
 - The sweep is one goroutine with a 30-second ticker. It runs once at boot, before the first tick. When a tick runs long, the next tick is skipped, not queued. (partly tested: TestSweepRunsImmediatelyAtBoot)
 - `now` is read once per tick and used for every statement and stamp of that tick. The phase-3 deadline is the one exception (below). (untested)
-- A tick has four phases, in this order: mark, push, fan-out, purge. `notified_at` and `pushed_at` are committed in phases 1 and 2, before any socket opens. A dropped notification still shows in the overdue list, but a crash loop that re-sends never stops, so the lifecycle writes always come first. (partly tested: TestFanOutBudgetStartsWithThePhase, TestSweepCollectDigestStampsExactlyTheHeldSet)
+- A tick has four phases, in this order: mark, push, fan-out, purge. `notified_at` and `pushed_at` are committed in phases 1 and 2, before any socket opens. (ADR-005) (partly tested: TestFanOutBudgetStartsWithThePhase, TestSweepCollectDigestStampsExactlyTheHeldSet)
 
 **Phase 1 — mark.** Database writes only, no network.
 
@@ -307,7 +308,7 @@ tx: UPDATE reminders SET pushed_at   = now WHERE id IN (<selected with due_at < 
 (test: TestSweepMarkIdempotent, TestSweepMarkLimit50, TestSweepMarkSkipsDoneRows)
 
 - `LIMIT 50` is a deliberate rate limit on shoutrrr messages per tick. The sweep does not loop within a tick, so a backlog of 200 is marked over four ticks. (test: TestSweepMarkLimit50, TestSixtyRowBacklogSplitsAcrossTwoDigests)
-- **The too-late gate (1800 s) applies in phase 1, at mark time, and nowhere else.** A row more than 1800 s past due when the sweep first sees it gets `notified_at` and `pushed_at` and one INFO line that names the id. It is never pushed and never fanned out. It only appears in the list. (test: TestSweepMarkTooLateGate, TestRowPastTheGateIsSilentAndKeepsTheWindow, TestMixedTickDigestsOnlyTheRowsInsideTheGate)
+- **The too-late gate (1800 s, ADR-004) applies in phase 1, at mark time, and nowhere else.** A row more than 1800 s past due when the sweep first sees it gets `notified_at` and `pushed_at` and one INFO line that names the id. It is never pushed and never fanned out. It only appears in the list. (test: TestSweepMarkTooLateGate, TestRowPastTheGateIsSilentAndKeepsTheWindow, TestMixedTickDigestsOnlyTheRowsInsideTheGate)
 - The gate sees only rows that were in the future when written and then went unswept (an outage). A backdated write never reaches phase 1, because the write path already set both columns (§4.1). (test: TestSweepMarkSkipsBackdatedWrites)
 - Phase 1 hands its selected rows, `text` and `extra_channels` included, to phase 3, minus the rows that the gate stamped. Phase 3 never re-queries. (test: TestSweepMarkHandsOffTextAndChannels, TestFanOutSkipsRowsPastTheGate)
 
@@ -446,7 +447,7 @@ The API uses JSON. `/api/*` is the only authenticated surface. (test: TestAPIReq
 
 ### 8.1 Auth
 
-**Cookie** `nag_session`, value `b64(exp) + "." + b64(mac)`. No session table and no user id: there is one user. Every piece of the value is pinned:
+**Cookie** `nag_session`, value `b64(exp) + "." + b64(mac)`. No session table and no user id (ADR-008). Every piece of the value is pinned:
 
 - `exp` is the expiry as a decimal ASCII string (`"1786742400"`).
 - `b64` is unpadded base64url (`base64.RawURLEncoding`).
@@ -525,7 +526,7 @@ The API uses JSON. `/api/*` is the only authenticated surface. (test: TestAPIReq
 
 ## 9. Frontend
 
-No JS test runner exists, so "(untested)" on a browser rule means that nothing executes `app.js` or `sw.js` to check it.
+No JS test runner exists (ADR-009), so "(untested)" on a browser rule means that nothing executes `app.js` or `sw.js` to check it.
 
 ### 9.1 Visual direction
 
@@ -618,7 +619,7 @@ One column, single page. Top to bottom:
 - Poll `/api/state` every 45 s while visible, at once on `visibilitychange` to visible, after each successful mutation (§8.2), and on a service-worker message (§9.5). A hidden tab keeps polling every 5 minutes. (untested)
 - All `/api/state` fetches share one `AbortController`, and a new fetch aborts the one in flight. An aborted fetch updates nothing: not the list, the badge, the clock offset, or the stored ETag. (untested)
 - A `304` updates the clock offset from the `Date` header, re-renders the rows in memory, re-arms the due timer, and redraws the badge. Only a `200` replaces the list. (partly tested: TestStateETagExcludesServerTime, server half only)
-- The badge and the lists are never held by the push cooldown (§7.3): a held reminder is in "Needs you now" and in `overdue_count` as soon as it is due, because the count comes from `due_at` and `done_at` only. The cooldown delays only the OS notification. Why: this is what makes a 30-minute cooldown on notifications acceptable. (partly tested: TestState, TestFanOutIsNotHeldByTheCooldown)
+- The badge and the lists are never held by the push cooldown (§7.3): a held reminder is in "Needs you now" and in `overdue_count` as soon as it is due, because the count comes from `due_at` and `done_at` only. The cooldown delays only the OS notification. (ADR-004) (partly tested: TestState, TestFanOutIsNotHeldByTheCooldown)
 - A one-shot timer fires at the earliest `later.due_at` and polls. It is armed regardless of visibility. (untested)
 - The timer is re-armed from the first element of `later` (server-sorted, §8.2) on each poll that answers `200` or `304`, so also after each fire. (untested)
 - Its delay is clamped: `Math.min((due_at - now()) * 1000, 2_000_000_000)`. (untested)
