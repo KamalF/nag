@@ -7,8 +7,8 @@ const $ = (id) => document.getElementById(id);
 
 // The three cadences of §9.3, and the flash. 45 s is for the tab in front of
 // you. 5 minutes keeps the favicon of a pinned tab correct without polling for
-// a machine that nobody uses. To stop polling a hidden tab entirely breaks
-// Goal 4: a tab whose favicon you read is hidden by definition.
+// a machine that nobody uses. If a hidden tab stops polling, Goal 4 breaks:
+// a tab whose favicon you read is hidden by definition.
 const VISIBLE_POLL_MS = 45000;
 const HIDDEN_POLL_MS = 300000;
 const FLASH_MS = 2400;
@@ -21,7 +21,7 @@ const ERROR_TOAST_MS = 7000;
 // A failed poll is not a toast: the line appears after this many in a row.
 const OFFLINE_AFTER_FAILURES = 2;
 
-// How long the request of a click waits for the render that shows its row.
+// How long a flash request waits for the render that shows its row.
 // It is not the duration of the highlight itself: the row can take several
 // passes to arrive. If the highlight expired before the row arrived, a slow
 // connection looks identical to a reminder that no longer exists.
@@ -34,8 +34,8 @@ const MAX_TIMER_MS = 2000000000;
 // §9.3 pins the drawn favicon. The two colors are hardcoded on purpose, and
 // not read from a custom property. A tab strip is not a page. The dot must
 // stay legible against a light and a dark browser chrome, and no media query
-// reports which one Firefox painted. BASE_TITLE comes from a constant for the
-// same class of reason: to read document.title compounds the prefix into
+// reports which one Firefox painted. BASE_TITLE is a constant for a similar
+// reason: if the code read document.title, the prefix compounds into
 // "(3) (2) Nag" on the second call.
 const BADGE_FILL = '#E0A33E';
 const BADGE_INK = '#212A2E';
@@ -49,8 +49,10 @@ let config = null;
 let channels = [];
 
 // The state of the poll. stateETag and lastState are a pair: the 304 path
-// renders again from the list already in memory. If an ETag is stored
-// without the body that it describes, it outlives the wrong render (§9.3).
+// renders again from the list already in memory. If the code stores an ETag
+// without the body that it describes, every later poll revalidates against a
+// body that is not on screen. Each 304 then renders the wrong list again
+// (§9.3).
 let stateETag = null;
 let lastState = null;
 
@@ -66,7 +68,7 @@ let pollTimer = null;
 // absent from the page, because an aborted refresh resolves and renders
 // nothing. pendingFlash is the request that waits for its row. litRow is the
 // row currently painted, so that clearFlash can find it. The keyed render
-// below reuses the node, so the paint survives every pass on its own.
+// below reuses the node, so the highlight stays on the row through every pass.
 let pendingFlash = null;
 let litRow = null;
 let flashTimer = null;
@@ -92,13 +94,13 @@ let swRegistration = null;
 // instance-wide (§8.2). Take a laptop whose row the server dropped and whose
 // re-post then failed: the flag still reads true, because the phone is
 // subscribed. The slot then reports that everything is fine while this device
-// is deaf. The re-post of §9.8 exists to prevent that outcome, so its own
-// result is the signal.
+// gets no notifications. The re-post of §9.8 exists to prevent that outcome,
+// so its own result is the signal.
 let repostFailed = false;
 
 // §9.8: the condition of the slot reads push_subscribed. If the slot is drawn
 // before the unconditional re-post resolves, it flashes "Turn on
-// notifications" on a healthy device that is in the middle of healing itself.
+// notifications" on a healthy device while the re-post repairs its row.
 // That is an invitation to fix what the re-post already fixes. And it is on
 // the one control whose whole design is to be absent when things work. The
 // lists never wait. Only the slot does.
@@ -129,7 +131,8 @@ async function init() {
     config = await cfgRes.json();
     channels = await chRes.json();
   } catch {
-    // a boot that fails must retry, not brick: there is no list yet to keep
+    // a failed boot must retry, not leave a dead page: there is no list yet
+    // to keep
     setTimeout(init, VISIBLE_POLL_MS);
     return;
   }
@@ -167,9 +170,10 @@ async function registerWorker() {
   try {
     const registration = await navigator.serviceWorker.register('/sw.js');
     // init retries itself on a failed boot, and a deploy fails the state
-    // fetch and the worker script fetch together. So this code must be able
-    // to recover. Otherwise one unlucky first load leaves the slot reading
-    // "this browser cannot show notifications" on a browser that can (§9.8).
+    // fetch and the worker script fetch together. So a later registration
+    // that succeeds must set pushAvailable back to true. Otherwise one unlucky
+    // first load leaves the slot reading "this browser cannot show
+    // notifications" on a browser that can (§9.8).
     pushAvailable = true;
     return registration;
   } catch (err) {
@@ -209,7 +213,7 @@ async function submitToken() {
 // createBar is the one control behind both the capture bar and the row
 // editor: same component, same keys, same behavior (§9.2). It is a
 // single-line input and the preset chips in file order (§5.4). A chip carries
-// its own answer and saves on the click (Goal 1). Enter means whatever the
+// its own time and saves on the click (Goal 1). Enter means whatever the
 // surface saves (§9.4), so each caller says what that is.
 function createBar({ value = '', placeholder = '', label, onTime, onEnter, pickFrom, attached }) {
   const el = document.createElement('div');
@@ -302,7 +306,8 @@ function createBar({ value = '', placeholder = '', label, onTime, onEnter, pickF
 //
 // "Grayed and unselectable" is a rule about adding, never about removing:
 // - a disabled channel already on the row renders selected and grayed, and
-//   you can deselect it. A mute must not make a name impossible to remove.
+//   you can deselect it. If you disable a channel, its name must stay
+//   removable from the row.
 // - a name that the catalog does not list (an orphan) gets its own grayed
 //   chip, selected. After you deselect it, you cannot select it again. You
 //   can carry an orphan forward, but never introduce one (§8.3).
@@ -412,9 +417,9 @@ let editor = null;
 
 function openEditor(row) {
   if (editor) {
-    // never eat typing: the time of the open editor itself, or another row,
-    // does not replace an editor that holds unsaved text. Focus goes back to
-    // that editor.
+    // never discard typed text. A click on the row of the open editor only
+    // focuses that editor again. A click on another row does the same while
+    // the open editor holds unsaved text.
     if (editor.row === row || editor.bar.input.value !== editor.row.reminder.text) {
       editor.bar.input.focus();
       return;
@@ -460,8 +465,8 @@ function closeEditor() {
   row.editing = false;
   if (lastState) renderState(lastState);
   const edit = row.li.querySelector('[data-action="Edit"]');
-  // saved from the picker: the chip that opened the sheet left with the
-  // editor, so the sheet hands focus here when it closes
+  // saved from the picker: the chip that opened the sheet was removed with
+  // the editor, so the sheet gives focus to Edit when it closes
   if (picker?.saving && bar.el.contains(picker.opener)) picker.returnTo = edit;
   else edit?.focus({ preventScroll: true });
 }
@@ -489,8 +494,8 @@ async function saveEdit(row, bar, timing) {
   const result = await userAction('/api/reminders/' + row.id, 'PATCH',
     { text, extra_channels: bar.selectedChannels(), ...timing });
   if (!result.ok) return false;
-  // only the editor of this save: if Esc closed it and the same row opened
-  // again, the new editor holds typing that this save does not own
+  // close only the editor of this save. If Esc closed it and the same row
+  // opened again, the new editor holds typing that this save does not own.
   if (editor?.bar !== bar) return true;
   // the returned object is what makes the row redraw right (§8.2). Put it in
   // the state that the next pass draws from, so that the row never shows its
@@ -500,9 +505,9 @@ async function saveEdit(row, bar, timing) {
     closeEditor();
   } else {
     // typed into while the save was in flight: the save landed, and the
-    // text typed since stays in the open editor. That text is measured
-    // against the row as it now stands. The code repaints the time and the
-    // marker of that row, beside the editor.
+    // text typed since stays in the open editor. The unsaved-text check now
+    // compares that text against the saved row. The code repaints the time
+    // and the marker of that row, beside the editor.
     row.reminder = result.data;
     paintMarker(row.marker, result.data);
     row.when.textContent = whenText(result.data.due_at);
@@ -602,8 +607,9 @@ function pendingMoment() {
 }
 
 // renderSummary is the confirmation that the user reads before pressing Set:
-// the full date with the time emphasized, and the relative line. The relative
-// line is the future rows of whenText verbatim, or the fixed past sentence.
+// the full date with the time emphasized, and the relative line. For a future
+// moment, the relative line is the output of whenText, unchanged. For a past
+// moment, it is the fixed past sentence.
 // The past sentence never says "late" about a time not yet saved (§9.11).
 // Past moments are allowed.
 function renderSummary() {
@@ -685,7 +691,8 @@ function pageMonth(delta) {
 }
 
 // buildWheels fills the two wheels: hours hour_min..hour_max, and minutes
-// 0..59 by minute_step. The hour range is hard, with no escape hatch (§9.6).
+// 0..59 by minute_step. The hour range is a hard limit, with no way to pick
+// an hour outside it (§9.6).
 function buildWheels() {
   const { hour_min: lo, hour_max: hi, minute_step: step } = config.picker;
   const hours = [];
@@ -798,9 +805,9 @@ function wirePicker() {
 
 // --- keyboard (§9.4) ---
 
-// onKeydown carries the whole list: / or n focus the capture input, and Esc
-// closes exactly one thing per press, innermost first. Enter belongs to each
-// surface, and each surface handles it.
+// onKeydown handles every page-wide key: / or n focus the capture input, and
+// Esc closes exactly one thing per press, innermost first. Enter belongs to
+// each surface, and each surface handles it.
 function onKeydown(e) {
   if (e.key === 'Escape') {
     if (picker) {
@@ -834,7 +841,7 @@ function onKeydown(e) {
 // request and needs no way to ask the server "do you know *this* endpoint".
 // push_subscribed is instance-wide (§8.2) and can never answer that. This
 // re-post restores a row that the server deleted on a 410 or a 403 (§7.1).
-// Without it, the app stays silently deaf.
+// Without it, this device silently gets no notifications.
 async function syncSubscription() {
   const registration = await swRegistration;
   if (!registration) return;
@@ -851,11 +858,11 @@ async function syncSubscription() {
 }
 
 // renderNotifySlot draws the slot of §9.2. Its steady state is absent: no
-// permanent settings furniture. It runs on every render, so it rebuilds only
+// permanent settings control. It runs on every render, so it rebuilds only
 // when the answer actually changed. Otherwise the button is destroyed and
 // created again every 45 seconds. That drops the focus of a keyboard user and
-// swallows a click that lands mid-await. And it happens on the one control
-// designed to be invisible when things work.
+// loses a click that arrives during an await. And it happens on the one
+// control designed to be invisible when things work.
 let slotGeneration = 0;
 let slotShowing = null;
 
@@ -890,8 +897,8 @@ async function renderNotifySlot(pushSubscribed) {
 // The conditions of §9.8, in the order of what each can explain: a browser
 // that cannot do this at all, an iPhone that needs installing first, a
 // permission that the user blocked, and only then the button. push_subscribed
-// is the belt to the other two braces. The re-post is awaited before the slot
-// is decided, so push_subscribed is almost always redundant. It still catches
+// is a backup check. The re-post is awaited before the slot is decided, so
+// push_subscribed is almost always redundant. It still catches
 // two cases: the re-post failed, or this browser holds a subscription that no
 // longer exists server-side.
 async function desiredSlot(pushSubscribed) {
@@ -909,8 +916,8 @@ async function desiredSlot(pushSubscribed) {
     // getSubscription rejects, and does not resolve null, where push is
     // disabled by policy or its service is unreachable. If unhandled, it
     // rejects a render pass every 45 s and leaves the slot frozen: no
-    // button, no line, nothing to act on. So it lands on the same quiet
-    // line as an unsupported browser (§9.5).
+    // button, no line, nothing to act on. So the slot shows the same quiet
+    // line as for an unsupported browser (§9.5).
     return 'unsupported';
   }
 }
@@ -925,7 +932,7 @@ async function turnOnNotifications() {
     if ((await Notification.requestPermission()) === 'granted') {
       const existing = await registration.pushManager.getSubscription();
       // an existing subscription goes through the same key check as the
-      // re-post: to post one that nobody compared is what poisons the row
+      // re-post. A post that skips the check corrupts the row on the server.
       const sub = existing
         ? await boundToCurrentKey(registration, existing)
         : await subscribeWith(registration, config.vapid_public);
@@ -944,10 +951,10 @@ async function turnOnNotifications() {
 // boundToCurrentKey is the "compare keys first, and post the key you
 // compared" rule of §9.8. Both entry points go through it. If a subscription
 // that nobody examined is posted under the configured key, the vapid_public
-// of the row equals that key by construction. That sends the 403 rung of §7.1
-// down its "matching, so it is a bug" branch forever. The row is kept, an
-// ERROR is logged on every sweep, the boot mismatch WARNING is blinded, and
-// the slot reports that everything is fine.
+// of the row equals that key by construction. A 403 then always takes the
+// "matching, so it is a bug" branch of §7.1. The row is kept, an ERROR is
+// logged on every sweep, the boot mismatch WARNING cannot see the stale key,
+// and the slot reports that everything is fine.
 async function boundToCurrentKey(registration, sub) {
   const bound = encodeKey(sub.options.applicationServerKey);
   // A null readback is not a mismatch: every browser new enough to reach
@@ -988,8 +995,9 @@ async function postSubscription(sub, key) {
     body: JSON.stringify({
       endpoint: json.endpoint,
       keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
-      // the key that this subscription is bound to, never the own value of
-      // the server. The column is only worth having if it records that (§7.1).
+      // the key that this subscription is bound to, never the key that the
+      // server holds now. The column is only worth having if it records that
+      // (§7.1).
       application_server_key: key,
     }),
   });
@@ -1057,7 +1065,9 @@ async function refreshState() {
     res = await fetch('/api/state', {
       signal: controller.signal,
       // the ETag lives in a variable here. If a stale response overwrites
-      // it, the stale ETag outlives the wrong render entirely (§9.3).
+      // it, the stale ETag stays in use after the wrong render is gone. Every
+      // later poll then revalidates against a body that is not on screen
+      // (§9.3).
       headers: stateETag ? { 'If-None-Match': stateETag } : {},
     });
   } catch {
@@ -1244,9 +1254,9 @@ function count(n, unit) {
 
 // setBadge writes the overdue count, never the total, to all three outputs:
 // the Badging API where it exists, a canvas-drawn favicon everywhere, and the
-// title prefix. Upcoming items must never light it up. That is exactly what
-// makes an icon badge mean something. setBadge(0) is a full reset, not a
-// no-op.
+// title prefix. Upcoming reminders must never add to the badge. That is
+// exactly what makes an icon badge mean something. setBadge(0) is a full
+// reset, not a no-op.
 function setBadge(count) {
   if ('setAppBadge' in navigator) {
     // clearAppBadge, not setAppBadge(0). Firefox has no Badging API on any
@@ -1321,9 +1331,10 @@ function drawFavicon(count) {
 // --- messages from the worker (§9.5) ---
 
 // The page half of the switch of §9.5. state-changed arrives on a tab that
-// nobody looks at. It puts a firing on the favicon immediately, not up to
-// five minutes later. So it refreshes and does nothing else: a scroll or a
-// flash moves the page under whatever you return to.
+// nobody looks at. It shows a reminder that just fired on the favicon
+// immediately, not up to five minutes later. So it refreshes and does
+// nothing else: a scroll or a flash moves the page under whatever you return
+// to.
 async function handleWorkerMessage(message) {
   if (!message) return;
   if (message.type === 'state-changed') {
@@ -1351,11 +1362,11 @@ function consumeFocusParam() {
 
 // flashRow scrolls to a row and highlights it for ~2.4 s. If the id is in
 // neither list after the refresh, the app is focused and nothing else
-// happens: no scroll, no flash, no toast, no error. Then another device
-// cleared the row while the notification sat in the tray, or this device
-// cleared it and the row was purged (§4.4). Both cases are ordinary: a
-// notification is never the record of anything (§7.6). Never fall back to
-// flashing the first row.
+// happens: no scroll, no flash, no toast, no error. In that case, either
+// another device cleared the row while the notification sat in the tray, or
+// this device cleared it and the row was purged (§4.4). Both cases are
+// ordinary: a notification is never the record of anything (§7.6). Never fall
+// back to flashing the first row.
 function flashRow(id) {
   clearFlash();
   pendingFlash = { id: String(id), deadline: performance.now() + FLASH_WAIT_MS };
@@ -1467,7 +1478,7 @@ function renderLists(state) {
   // blurs what is inside the node. Or it can rebuild the actions of the row
   // (a row that changed zone). Focus is restored by identity, the same row
   // and the same action, so both cases come back. Typically that is the Edit
-  // button that a closing editor just took.
+  // button that a closing editor just focused.
   const focused = document.activeElement;
   const focusedAction = focused?.dataset?.action;
   const focusedRow = focused?.closest?.('li.row')?.dataset.id;
@@ -1673,9 +1684,9 @@ async function userAction(path, method, body) {
 // that the server reloaded since (§5.5). It is the one error that the user
 // cannot act on and the app can fix itself. Refetch /api/config and redraw
 // the chip rows in place, in the capture bar and in an open editor. Keep the
-// typed text, the open editor and the pending value of the picker. The
-// quiet-moment rule still governs the full reload, and these very states hold
-// that reload back.
+// typed text, the open editor and the pending value of the picker. The full
+// reload still waits for a quiet moment (reloadWhenQuiet). Typed text, an open
+// editor and an open picker are exactly what delays that reload.
 function isUnknownPreset(result) {
   return result.status === 400 && result.error?.startsWith('unknown preset ');
 }

@@ -8,10 +8,10 @@
 
 // tag is constant, to match the Topic of the server (§7.1). The tray holds at
 // most one Nag notification, because the tray is a nudge and the count lives
-// on the badge (§9.3). renotify goes with it. In Chrome, a notification that
-// replaces another under an existing tag is silent by default. Without
-// renotify, the second digest of the morning arrives with no sound and no
-// banner, and looks exactly like a bug.
+// on the badge (§9.3). A constant tag needs renotify. In Chrome, a
+// notification that replaces another under an existing tag is silent by
+// default. Without renotify, the second digest of the morning arrives with no
+// sound and no banner, and looks exactly like a bug.
 const TAG = 'nag';
 
 // Two assets for two slots (§9.3). Platforms render `icon` at 64–192 device
@@ -136,10 +136,10 @@ self.addEventListener('notificationclick', (event) => {
 });
 
 // focusOrOpen is the asymmetric pair of §9.5. An existing client is focused
-// and told by postMessage. It already listens, and a navigation moves the
-// page out from under whatever you were doing. A new window carries the id in
-// its URL instead. A postMessage to a window that openWindow just returned is
-// a race that the worker always loses: app.js is not parsed yet, so no
+// and told by postMessage. It already listens, and a navigation replaces the
+// page in the middle of whatever you were doing. A new window carries the id
+// in its URL instead. A postMessage to a window that openWindow just returned
+// is a race that the worker always loses: app.js is not parsed yet, so no
 // message listener exists. And that is the common case, because a
 // notification that you click usually arrived with the tab closed.
 async function focusOrOpen(id) {
@@ -170,10 +170,11 @@ self.addEventListener('pushsubscriptionchange', (event) => {
 // worker fetch is same-origin and carries the session cookie. The key does
 // not come from event.oldSubscription. That field is not reliably populated
 // across browsers, and it can hold a key that was rotated away since. On any
-// failure, do nothing. The unconditional re-post of §9.8 heals it the next
-// time the page opens, and there is nothing useful to do in a worker with no
-// credentials. This is the one handler that legitimately talks to the
-// server, and it is not on the notification-drawing path.
+// failure, do nothing. The unconditional re-post of §9.8 repairs the
+// subscription the next time the page opens, and there is nothing useful to
+// do in a worker with no credentials. This is the one handler that
+// legitimately talks to the server, and it is not on the
+// notification-drawing path.
 async function resubscribe() {
   try {
     const configRes = await fetch('/api/config');

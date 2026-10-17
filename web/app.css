@@ -5,7 +5,8 @@
    redefines the same names under prefers-color-scheme. The OS decides: there
    is no data-theme attribute, no toggle, and nothing persisted (§9.1). The
    light amber and quiet ink are not inversions of the dark ones. #E0A33E is
-   ~2:1 on light slate, and #67787E measured under the 4.5:1 floor. */
+   ~2:1 on light slate, and #67787E measured under the 4.5:1 minimum
+   contrast. */
 :root {
   --surface: #EFF1F0;
   --surface-lift: #F7F8F8;
