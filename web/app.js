@@ -1,6 +1,6 @@
 'use strict';
 
-// The Nag page (§9). The client persists nothing (§11): the server state is
+// The Nag page (§9). The client persists nothing (§9.2): the server state is
 // the only state.
 
 const $ = (id) => document.getElementById(id);
@@ -363,7 +363,7 @@ function channelSelector(attached) {
   return {
     el,
     selected: () => chips.filter((c) => c.selected).map((c) => c.name),
-    // after each save the selection resets: nothing is remembered (§11)
+    // after each save the selection resets: nothing is remembered (§9.2)
     reset() {
       for (const c of chips) {
         c.selected = false;
@@ -525,6 +525,9 @@ let picker = null;
 
 const ITEM_PX = 44; // --item: one wheel row
 const WHEEL_SETTLE_MS = 90;
+// The sentence says "nothing", not "no notification": a backdated write skips
+// its channels too (§4.1). It names no window and no cooldown, because neither
+// applies to a moment picked here.
 const PAST_SENTENCE = "in the past — it will wait in Needs you now, and nothing will be sent";
 const monthFormat = new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' });
 const shortWeekdayFormat = new Intl.DateTimeFormat(undefined, { weekday: 'short' });
@@ -577,6 +580,13 @@ function closePicker() {
 // tomorrow. The test is on the value that the sheet shows. The minute reset
 // can itself move a future row into the past (14:30 today reads back as
 // 14:00), and the sheet never opens on the in-the-past warning.
+//
+// The minute is 00, never the stored minute and never a snap to the nearest
+// minute_step. The wheel often cannot show the stored minute (23 is not on a
+// 15-minute step), and a snap is a silent move that looks like the stored
+// value. 00 is always on the wheel (§5.5). The hour clamp can move the time
+// (a preset can give 07:00 under hour_min = 8). That is accepted: the summary
+// shows the moment before the save.
 function openingState(from) {
   const { hour_min: lo, hour_max: hi } = config.picker;
   const clamp = (h) => Math.min(Math.max(h, lo), hi);
@@ -807,7 +817,9 @@ function wirePicker() {
 
 // onKeydown handles every page-wide key: / or n focus the capture input, and
 // Esc closes exactly one thing per press, innermost first. Enter belongs to
-// each surface, and each surface handles it.
+// each surface, and each surface handles it. There are no per-preset digit
+// shortcuts: the capture input is autofocused, so a digit must type ("renew
+// the domain in 2 years"). Alt+digit already switches browser tabs.
 function onKeydown(e) {
   if (e.key === 'Escape') {
     if (picker) {

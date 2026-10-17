@@ -51,7 +51,12 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The stored key is the key that the client says it subscribed under,
-	// never the configured one (§7.1).
+	// never the configured one (§7.1). A browser can re-post a subscription
+	// that is still bound to a retired keypair (§9.8). With the configured
+	// key stamped, that row looks current: the boot warning counts zero
+	// mismatches, and a 403 on it is logged as a bug and the row is kept
+	// forever. The column is useful only if it records what the
+	// subscription is bound to.
 	err := s.store.UpsertSubscription(r.Context(), body.Endpoint,
 		body.Keys.P256dh, body.Keys.Auth, body.ApplicationServerKey, time.Now().Unix())
 	if err != nil {

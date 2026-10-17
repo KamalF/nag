@@ -15,7 +15,10 @@ const healthcheckTimeout = 2 * time.Second
 // scratch image has no curl, so the binary asks its own /healthz. /healthz
 // answers 200 only after SELECT 1, and the command exits 0 only on a 200. It
 // needs NAG_ADDR and nothing else. Nothing acts on the result (§10.1): it is
-// a status to read in `docker ps`, not a self-heal.
+// a status to read in `docker ps`, not a self-heal. The check catches a
+// database that became unopenable. A restart loop against a bad disk or a
+// wrong chown replaces one visible unhealthy status with log lines that
+// nobody reads.
 func runHealthcheck(stderr io.Writer) int {
 	url, err := healthcheckURL(envOr("NAG_ADDR", defaultAddr))
 	if err != nil {

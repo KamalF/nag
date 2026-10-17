@@ -95,7 +95,10 @@ func New(o Options) *Server {
 // 404, so a misspelled endpoint fails in the §8.3 shape. Without it,
 // index.html answers that endpoint with a 200. The catch-all also
 // deliberately answers a wrong method on a real path with 404, never 405
-// (§8.2).
+// (§8.2): "/api/" matches every method, so the mux never reaches its
+// method-mismatch branch. The only non-browser client is curl, and both
+// answers mean "no such request". A 405 needs every method of every path
+// registered separately.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	// Methodless on purpose: a method-specific "GET /" plus the methodless

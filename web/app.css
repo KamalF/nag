@@ -23,7 +23,10 @@
   --scrim: rgba(30,40,44,.42);
 
   /* layout tokens, not theme (§9.1). Fonts are system stacks: nothing is
-     downloaded and nothing is embedded, so font-src is 'none' (§10.2) */
+     downloaded and nothing is embedded, so font-src is 'none' (§10.2).
+     Optima and Iowan Old Style are licensed OS faces that cannot be
+     self-hosted. A woff2 substitute makes the Mac and the iPhone look less
+     like the design. Other platforms fall back to Gill Sans and Georgia. */
   --body: "Optima", Candara, "Gill Sans", "Gill Sans MT", sans-serif;
   --time: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
   --pad: 26px;

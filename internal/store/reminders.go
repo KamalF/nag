@@ -30,7 +30,10 @@ const reminderColumns = "id, text, due_at, notified_at, pushed_at, done_at, crea
 // backdatedStamps is §4.1's rule for a due_at in the past, shared by create
 // and re-time. A due_at that is not in the future stamps both lifecycle columns
 // to now. The row is then invisible to the sweep's phase 1, and can never
-// become a digest candidate.
+// become a digest candidate. So it gets no fan-out either: only the sweep
+// sends to channels. A handler that sent to a channel itself would put a
+// third-party timeout on the request path, for the one write that is not
+// urgent.
 func backdatedStamps(dueAt, now int64) (notified, pushed *int64) {
 	if dueAt <= now {
 		return &now, &now
@@ -129,7 +132,9 @@ type ReminderUpdate struct {
 // create), and done_at and delivery_error clear. A changed ExtraChannels list
 // also clears delivery_error. "Changed" is an ordered comparison of the
 // canonical forms. An identical list touches nothing, so a re-save of a row
-// with the same channels does not clear delivery_error.
+// with the same channels does not clear delivery_error. Each entry of
+// delivery_error names a channel of the old list, so after any change to the
+// list the verdict is stale, and its marker can point at a chip that is gone.
 func (s *Store) UpdateReminder(ctx context.Context, current Reminder, u ReminderUpdate, now int64) (Reminder, error) {
 	var set []string
 	var args []any

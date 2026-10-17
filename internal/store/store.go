@@ -60,6 +60,15 @@ type Store struct {
 // cannot be opened or migrated, Open refuses and names the path. If the
 // database's schema version is newer than this binary knows, Open also
 // refuses (§4.2).
+//
+// One connection removes SQLITE_BUSY inside the process. busy_timeout covers
+// the second process: `nag channel` runs against the same file while serve
+// holds the write lock. The idle and lifetime settings keep that single
+// connection open, so the pool never drops the WAL read state and the
+// per-connection pragmas between statements. synchronous(NORMAL) is the usual
+// WAL pairing: a commit survives a process crash, and only a host power loss
+// can lose the last transactions. A full fsync on each commit of a sweep that
+// runs every 30 s buys nothing more for this app.
 func Open(path string) (*Store, error) {
 	dsn := "file:" + path +
 		"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)"

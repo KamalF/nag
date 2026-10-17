@@ -60,7 +60,9 @@ type Preset struct {
 // genuinely absent, Load first writes the embedded default there and reports
 // wroteDefault = true. A file that is present but unreadable, unparseable, or
 // invalid is an error that names the path. Load never overwrites that file
-// with the default (§5.3).
+// with the default (§5.3). At boot there is no old config to keep, and a
+// typo that silently runs the shipped presets instead of yours is a failure
+// that nobody sees. So boot exits on that error.
 func Load(path string) (cfg *Config, wroteDefault bool, err error) {
 	cfg, err = Check(path)
 	if err == nil || !errors.Is(err, fs.ErrNotExist) {

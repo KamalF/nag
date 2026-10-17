@@ -4,6 +4,10 @@ services:
     # checkout instead, and Compose falls back to that build when the pull fails
     image: ghcr.io/kamalf/nag:latest
     build: .
+    # bind mounts, not named volumes (§10.1). Docker creates a named volume
+    # owned by root, and the scratch image has no shell to chown it from
+    # inside. A bind mount is chowned once on the host, a wrong uid fails at
+    # boot with the path named, and a backup is a cp of data/nag.db*
     volumes:
       - ./data:/data
       - ./config:/config

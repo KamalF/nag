@@ -54,7 +54,10 @@ const maxDeliveryErrors = 3
 
 // perSendTimeout is the sweep-side deadline of §7.1. Sends are sequential,
 // so three sleeping devices make a 30-second tick, and the next tick is
-// skipped. The no-overlap rule already tolerates that (§7.3).
+// skipped. The no-overlap rule already tolerates that (§7.3). A personal
+// instance has two to four subscriptions, so parallel sends gain nothing.
+// They only add a WaitGroup and the need to serialize the 404/410 row
+// deletions on the single connection.
 const perSendTimeout = 10 * time.Second
 
 // pusher is the sweep's view of the §7.1 sender: one send, one verdict.
@@ -109,7 +112,10 @@ func NewSweep(st *store.Store, log *slog.Logger, sender pusher, retentionDays fu
 
 // Run loops until ctx is canceled: once immediately at boot, then on the
 // ticker. One goroutine reads the ticker channel. So if a tick runs long,
-// the next one is skipped, never queued (§7.3).
+// the next one is skipped, never queued (§7.3). The sweep polls, and keeps
+// no timer per reminder: a poll survives a restart and needs no reschedule
+// when a due date is edited. ntfy's own delayed delivery is not used for
+// the same reason: this app owns the schedule.
 func (s *Sweep) Run(ctx context.Context) {
 	s.tick(ctx)
 	ticker := time.NewTicker(s.interval)

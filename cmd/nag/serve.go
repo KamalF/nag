@@ -113,8 +113,11 @@ const shutdownTimeout = 5 * time.Second
 // server stops taking requests. Next, serveUntil cancels the sweep's context
 // and waits for the sweep. Only then does it close the database. As a
 // result, the WAL checkpoint never runs during a tick that still writes
-// delivery_error or deletes a subscription. The wait is short because every
-// send in the sweep uses a child of the sweep's context.
+// delivery_error or deletes a subscription. A tick alone can run longer than
+// the 10-second stop grace period of Docker: sequential 10-second pushes, then the 20-second budget
+// of phase 3. The wait is short because every send in the sweep uses a child
+// of the sweep's context: the cancel ends the in-flight send at once, and the
+// tick stops at the next row boundary.
 func serveUntil(stop context.Context, server *http.Server, sweep func(context.Context), closeDB func() error) error {
 	sweepCtx, cancelSweep := context.WithCancel(context.Background())
 	sweepDone := make(chan struct{})

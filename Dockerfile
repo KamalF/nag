@@ -1,6 +1,5 @@
 # Nag (§10). Multi-stage build, FROM scratch final image.
-# The Go image follows ADR-002 (go.mod and the build on one version), not
-# the spec sketch's literal 1.24.
+# The Go image follows ADR-002 (go.mod and the build on one version).
 # The builder runs on the build host's platform and cross-compiles, so a
 # multi-arch build needs no emulation (the final stage has no RUN).
 FROM --platform=$BUILDPLATFORM golang:1.27 AS build
