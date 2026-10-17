@@ -198,8 +198,8 @@ kind = "cron"
 			[]string{`"p"`, `"cron"`},
 		},
 		{
-			// LoadLocation("") returns UTC with a nil error, so a deleted
-			// timezone line would otherwise pass validation and schedule
+			// LoadLocation("") returns UTC with a nil error. Without this
+			// rule, a deleted timezone line passes validation and schedules
 			// every clock/weekday preset in UTC silently.
 			"empty timezone",
 			doc(`[general]
@@ -385,7 +385,7 @@ func TestValidationAccepts(t *testing.T) {
 		doc  string
 	}{
 		{"the assembled valid document", doc("", "", "")},
-		// §5.4: [picker] constrains only the sheet — a preset at 07:00
+		// §5.4: [picker] constrains only the sheet, so a preset at 07:00
 		// under hour_min = 8 is valid.
 		{"preset at outside picker hours", doc(`[general]
 timezone = "Europe/Paris"

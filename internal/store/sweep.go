@@ -6,9 +6,9 @@ import (
 	"strings"
 )
 
-// MarkedRow is phase 1's hand-off: the tick fans out exactly what it just
-// marked and never re-queries, so the message text has to come out of
-// this SELECT (§7.3).
+// MarkedRow is phase 1's hand-off. The tick fans out exactly what it just
+// marked and never re-queries, so the message text must come out of this
+// SELECT (§7.3).
 type MarkedRow struct {
 	ID            int64
 	Text          string
@@ -20,13 +20,13 @@ type MarkedRow struct {
 	channelsAsRead *string
 }
 
-// SweepMark is §7.3 phase 1, one transaction, writes only: select up to 50
-// due unmarked rows, stamp notified_at = now on all of them, and stamp
-// pushed_at = now too on those past the too-late gate — rows due more than
-// tooLateAfter seconds ago (the notify package owns that policy number).
-// It returns the eligible rows for the later phases — gate-stamped rows
-// excluded: the gate means no output at all — and the gated ids for the
-// INFO line.
+// SweepMark is §7.3 phase 1, in one transaction, with writes only. It
+// selects up to 50 due unmarked rows and stamps notified_at = now on all of
+// them. It also stamps pushed_at = now on the rows past the too-late gate:
+// rows due more than tooLateAfter seconds ago (the notify package owns that
+// policy number). It returns the eligible rows for the later phases, and the
+// gated ids for the INFO line. Gate-stamped rows are not eligible: the gate
+// means no output at all.
 func (s *Store) SweepMark(ctx context.Context, now, tooLateAfter int64) (eligible []MarkedRow, tooLate []int64, err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -87,8 +87,8 @@ func (s *Store) SweepMark(ctx context.Context, now, tooLateAfter int64) (eligibl
 // heldPredicate is the one definition of "held": a row the sweep has
 // handled that no push has carried yet. Phase 2's selection, its
 // predicate-not-id-list UPDATE, and §10.4's held-rows count must agree by
-// construction — a count that reports a different set than the digest
-// collects would misreport in exactly the silence it exists to explain.
+// construction. If the count reports a different set than the digest
+// collects, it misreports in exactly the silence that it exists to explain.
 const heldPredicate = "done_at IS NULL AND notified_at IS NOT NULL AND pushed_at IS NULL"
 
 // HeldRow is one digest candidate: a row the sweep has handled that no
@@ -99,19 +99,20 @@ type HeldRow struct {
 	DueAt int64
 }
 
-// SweepCollectDigest is §7.3 phase 2's transaction: take the held set —
-// done_at IS NULL AND notified_at IS NOT NULL AND pushed_at IS NULL, in due
-// order — stamp pushed_at = now on all of it, and split it by age.
-// sendable is what the digest may still notify about; tooLate names the rows
-// it may not. Both halves are stamped, which is the point: a row that leaves
-// the held set must never be selectable again at a greater age later, and
-// the notify package owns the policy number that divides them.
+// SweepCollectDigest is §7.3 phase 2's transaction. It takes the held set
+// (done_at IS NULL AND notified_at IS NOT NULL AND pushed_at IS NULL, in due
+// order), stamps pushed_at = now on all of it, and splits it by age.
+// sendable is what the digest can still notify about. tooLate names the rows
+// that it cannot notify about. Both halves are stamped, and that is the
+// point: a row that leaves the held set must never be selectable again at a
+// greater age later. The notify package owns the policy number that divides
+// them.
 //
-// The UPDATE repeats the SELECT's predicate instead of listing ids: there is
-// no LIMIT here, so an id list is unbounded, and MaxOpenConns(1) means the
-// predicate cannot have gained a row between the two statements (§7.3). It
-// deliberately carries no age condition — the split decides what is sent,
-// never what is stamped.
+// The UPDATE repeats the SELECT's predicate instead of a list of ids. There
+// is no LIMIT here, so an id list is unbounded. MaxOpenConns(1) means that
+// the predicate cannot gain a row between the two statements (§7.3). The
+// UPDATE deliberately carries no age condition: the split decides what is
+// sent, never what is stamped.
 func (s *Store) SweepCollectDigest(ctx context.Context, now, maxLateness int64) (sendable []HeldRow, tooLate []int64, err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -140,8 +141,8 @@ func (s *Store) SweepCollectDigest(ctx context.Context, now, maxLateness int64) 
 	if err := rows.Err(); err != nil {
 		return nil, nil, err
 	}
-	// every scanned row landed in exactly one of the two slices, so this is
-	// "the SELECT returned nothing" — the UPDATE below would touch no row
+	// every scanned row landed in exactly one of the two slices, so this
+	// means "the SELECT returned nothing", and the UPDATE below touches no row
 	if len(sendable) == 0 && len(tooLate) == 0 {
 		return nil, nil, tx.Commit()
 	}
@@ -152,9 +153,9 @@ func (s *Store) SweepCollectDigest(ctx context.Context, now, maxLateness int64) 
 	return sendable, tooLate, tx.Commit()
 }
 
-// HeldCount counts the rows waiting out the cooldown, for the §10.4
-// held-rows line — the line that tells a 20-minute silence apart from a
-// broken sweep.
+// HeldCount counts the rows that wait out the cooldown, for the §10.4
+// held-rows line. That line tells a 20-minute silence apart from a broken
+// sweep.
 func (s *Store) HeldCount(ctx context.Context) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx,
@@ -178,13 +179,14 @@ func stampByID(ctx context.Context, tx *sql.Tx, column string, now int64, ids []
 }
 
 // SetDeliveryError writes one row's fan-out verdict as soon as its attempts
-// finish (§7.2): the classified string, or nil to clear it after a fully
-// successful fan-out. It only lands on the row as phase 1 marked it: a row
-// re-timed since, or whose channel list was edited since, has had its
-// delivery_error cleared by that write (§4.1), and this tick's verdict —
-// naming channels the row may no longer carry — must not resurrect it. The
-// due_at check catches the re-time notified_at alone cannot: one into the
-// past in the same second, which stamps notified_at with that same now.
+// finish (§7.2). The verdict is the classified string, or nil to clear it
+// after a fully successful fan-out. It only lands on the row as phase 1
+// marked it. A re-time since then, or an edit to the channel list since
+// then, cleared delivery_error in that write (§4.1). This tick's verdict can
+// name channels that the row no longer carries, so it must not resurrect
+// delivery_error. The due_at check catches the re-time that notified_at
+// alone cannot catch: a re-time into the past in the same second, which
+// stamps notified_at with that same now.
 func (s *Store) SetDeliveryError(ctx context.Context, row MarkedRow, markedAt int64, value *string) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE reminders SET delivery_error = ?
@@ -194,8 +196,8 @@ func (s *Store) SetDeliveryError(ctx context.Context, row MarkedRow, markedAt in
 }
 
 // Purge is §4.4: delete the cleared rows whose done_at is older than
-// cutoff, and return how many went. Rows still in a list are never
-// touched — done_at IS NULL is not "older than" anything.
+// cutoff, and return how many went. Rows that are still in a list are never
+// touched: done_at IS NULL is not "older than" anything.
 func (s *Store) Purge(ctx context.Context, cutoff int64) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
 		"DELETE FROM reminders WHERE done_at IS NOT NULL AND done_at < ?", cutoff)

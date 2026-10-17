@@ -8,9 +8,9 @@ import (
 	"strings"
 )
 
-// §5.1 defaults. Only `serve` enforces the full table; each other
-// subcommand reads just the values it needs — genkeys and version run
-// with nothing set.
+// §5.1 defaults. Only `serve` enforces the full table. Each other
+// subcommand reads only the values that it needs, and genkeys and version
+// run with nothing set.
 const (
 	defaultDB     = "/data/nag.db"
 	defaultConfig = "/config/nag.toml"
@@ -36,9 +36,9 @@ type serveEnv struct {
 const genkeysFix = "  Generate one:  docker compose run --rm -T nag genkeys >> nag.env\n  Then restart."
 
 // loadServeEnv resolves and shape-checks every §5.1 variable. Each refusal
-// names the variable, the expected shape, and what was found — a mangled
-// VAPID paste must be a startup error here, not a push failure on every
-// sweep once a reminder comes due.
+// names the variable, the expected shape, and what it found. A mangled VAPID
+// paste must be a startup error here, not a push failure on every sweep after
+// a reminder comes due.
 func loadServeEnv() (serveEnv, error) {
 	e := serveEnv{
 		db:           envOr("NAG_DB", defaultDB),
@@ -64,9 +64,9 @@ func loadServeEnv() (serveEnv, error) {
 	return e, checkSubject(e.vapidSubject)
 }
 
-// checkToken enforces the 20-character floor: NAG_TOKEN is not only the
-// bearer credential but the sole input to the cookie signing key (§8.1),
-// and a six-character token is a six-character MAC key that fails silently.
+// checkToken enforces the 20-character floor. NAG_TOKEN is the bearer
+// credential, and also the only input to the cookie signing key (§8.1). A
+// six-character token is a six-character MAC key that fails silently.
 func checkToken(token string) error {
 	if token == "" {
 		return fmt.Errorf("NAG_TOKEN is not set (expected the bearer token, minimum 20 characters).\n%s", genkeysFix)
@@ -77,17 +77,17 @@ func checkToken(token string) error {
 	return nil
 }
 
-// checkVAPIDKey applies the same shape check §8.2 applies to a
-// client-supplied application_server_key: unpadded base64url decoding to
+// checkVAPIDKey applies the same shape check that §8.2 applies to a
+// client-supplied application_server_key: unpadded base64url that decodes to
 // exactly wantBytes.
 func checkVAPIDKey(name, value string, wantBytes int) error {
 	if value == "" {
 		return fmt.Errorf("%s is not set (expected unpadded base64url decoding to %d bytes).\n%s",
 			name, wantBytes, genkeysFix)
 	}
-	// Go's base64 decoder ignores \r and \n, and a trailing \r from a
-	// TTY-corrupted `genkeys` append (§5.2) is the very paste this check
-	// exists to catch — reject it before decoding.
+	// Go's base64 decoder ignores \r and \n. A trailing \r from a
+	// TTY-corrupted `genkeys` append (§5.2) is exactly the paste that this
+	// check must catch, so reject it before decoding.
 	if strings.ContainsAny(value, "\r\n") {
 		return fmt.Errorf("%s contains a carriage return or newline — expected one line of unpadded base64url (%d decoded bytes)",
 			name, wantBytes)
@@ -103,9 +103,9 @@ func checkVAPIDKey(name, value string, wantBytes int) error {
 	return nil
 }
 
-// describeNonBase64URL says what is wrong with a key without quoting it:
-// a mangled NAG_VAPID_PRIVATE is still the private key, typically in the
-// standard alphabet, and the FATAL line lands in `docker logs`.
+// describeNonBase64URL says what is wrong with a key, but never quotes the
+// key. A mangled NAG_VAPID_PRIVATE is still the private key, usually in the
+// standard alphabet, and the FATAL line goes to `docker logs`.
 func describeNonBase64URL(value string) string {
 	switch {
 	case strings.ContainsAny(value, "+/"):
@@ -127,9 +127,10 @@ func notBase64URL(r rune) bool {
 	return !(r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' || r == '_')
 }
 
-// checkSubject wants an absolute mailto: or https: URL (RFC 8292) and
-// rejects the genkeys placeholder by name: push services use the subject
-// to reach the operator, and a placeholder that boots is one that ships.
+// checkSubject requires an absolute mailto: or https: URL (RFC 8292). It
+// rejects the genkeys placeholder by name: push services use the subject to
+// contact the operator, and a placeholder that boots is a placeholder that
+// ships.
 func checkSubject(subject string) error {
 	if subject == "" {
 		return fmt.Errorf("NAG_VAPID_SUBJECT is not set (expected an absolute mailto: or https: URL)")

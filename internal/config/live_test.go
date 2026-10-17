@@ -13,7 +13,7 @@ import (
 	"github.com/KamalF/nag/internal/presets"
 )
 
-// The §5.5 hash tests §11 asks for. The failure mode is silent in both
+// The §5.5 hash tests. The failure mode is silent in both
 // directions, so each test reads the running config and the counter.
 
 const liveTOML = `[general]
@@ -71,9 +71,9 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
-// An offset-only edit is applied — the next tap of that chip lands at the
-// new duration — while config_version does not move: the client cannot see
-// offset, so nothing it holds is stale.
+// An offset-only edit is applied: the next tap of that chip lands at the new
+// duration. But config_version does not move: the client cannot see offset,
+// so nothing that it holds is stale.
 func TestReloadOffsetOnlyAppliesWithoutMovingTheCounter(t *testing.T) {
 	f := newLive(t)
 	f.reloadWith(strings.Replace(liveTOML, `offset = "30m"`, `offset = "45m"`, 1))
@@ -104,8 +104,8 @@ func TestReloadLabelRenameMovesTheCounter(t *testing.T) {
 	}
 }
 
-// A byte-identical file moves nothing and logs "config unchanged" — the
-// config check then HUP workflow signals twice.
+// A byte-identical file moves nothing and logs "config unchanged". The
+// workflow "config check, then HUP" signals twice.
 func TestReloadIdenticalFileChangesNothing(t *testing.T) {
 	f := newLive(t)
 	f.reloadWith(liveTOML)
@@ -117,8 +117,8 @@ func TestReloadIdenticalFileChangesNothing(t *testing.T) {
 	}
 }
 
-// A reload that fails validation — or finds the file gone — leaves both
-// the running config and the counter untouched, and says so in the log.
+// A reload that fails validation, or finds the file gone, leaves both the
+// running config and the counter untouched, and says so in the log.
 func TestReloadFailureKeepsTheRunningConfig(t *testing.T) {
 	for name, edit := range map[string]func(f *liveFixture){
 		"invalid": func(f *liveFixture) {

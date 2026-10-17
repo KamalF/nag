@@ -10,10 +10,10 @@ import (
 )
 
 // Snapshot is one loaded config with everything derived from it: the
-// resolved timezone and the config_version it was published under. Readers
-// load the pointer once per request or tick and use that snapshot
-// throughout (§5.5) — the same discipline as reading now once — so a
-// request never resolves a preset from one config and reports the
+// resolved timezone, and the config_version that it was published under.
+// Readers load the pointer once per request or tick, and use that snapshot
+// throughout (§5.5). This is the same discipline as reading now once. As a
+// result, a request never resolves a preset from one config and reports the
 // config_version of the next.
 type Snapshot struct {
 	*Config
@@ -35,7 +35,7 @@ type Live struct {
 
 // NewLive publishes cfg, already loaded and validated at boot, as
 // config_version 1. The counter lives in memory and restarts at 1, so it
-// can move backwards across a restart; clients compare with !=.
+// can move backward across a restart. Clients compare with !=.
 func NewLive(path string, cfg *Config, vapidPublic string) *Live {
 	l := &Live{path: path, vapidPublic: vapidPublic}
 	l.current.Store(l.snapshot(cfg, 1))
@@ -46,18 +46,19 @@ func NewLive(path string, cfg *Config, vapidPublic string) *Live {
 func (l *Live) Load() *Snapshot { return l.current.Load() }
 
 // Reload re-reads and re-validates the file through the same code path as
-// boot and config check. On any failure — a validation error, or a file
-// gone missing or unreadable — it logs and keeps the running config: a
-// failed reload never stores a pointer, so "keep the old config" is a
-// skipped assignment rather than a rollback, and the default is never
+// boot and config check. On any failure (a validation error, or a file that
+// is now missing or unreadable), it logs the failure and keeps the running
+// config. A failed reload never stores a pointer. So "keep the old config"
+// is a skipped assignment, not a rollback, and the default is never
 // rewritten (§5.5).
 //
 // A successful load always replaces the config. Two hashes answer the two
-// questions (§5.5): the full hash, over every resolved value, decides only
-// what is logged; the client hash, over exactly what /api/config returns,
-// decides whether config_version moves. One hash cannot do both: the client
-// projection is blind to every edit that changes what a chip does, and
-// bumping on every load would reload every open page on a HUP sent twice.
+// questions of §5.5. The full hash covers every resolved value, and decides
+// only what is logged. The client hash covers exactly what /api/config
+// returns, and decides whether config_version moves. One hash cannot do
+// both. The client projection is blind to every edit that changes what a
+// chip does. And if every load bumps the counter, a HUP sent twice reloads
+// every open page.
 func (l *Live) Reload(log *slog.Logger) {
 	l.reloading.Lock()
 	defer l.reloading.Unlock()
@@ -94,11 +95,11 @@ func (l *Live) snapshot(cfg *Config, version int) *Snapshot {
 	}
 }
 
-// ClientView is the /api/config projection minus config_version — the
-// presets as {key,label,quick} in file order, never kind, offset, at, days,
-// weekday, same_day_ok, the timezone or retention_days (§8.2). It is both
-// the response body and the input to the client hash, so the two cannot
-// disagree about what the client sees.
+// ClientView is the /api/config projection without config_version. Its
+// presets are {key,label,quick} in file order. It never holds kind, offset,
+// at, days, weekday, same_day_ok, the timezone or retention_days (§8.2). It
+// is both the response body and the input to the client hash, so the two
+// cannot disagree about what the client sees.
 func (l *Live) ClientView(cfg *Config) ClientView {
 	v := ClientView{
 		VAPIDPublic:   l.vapidPublic,

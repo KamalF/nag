@@ -2,13 +2,13 @@ package store
 
 import "context"
 
-// UpsertSubscription records the subscription the client posted, keyed by
-// endpoint. vapidPublic is the key the *client* says it subscribed under —
-// never the server's configured value (§7.1). The conflict branch must
-// overwrite p256dh, auth, AND vapid_public while preserving created_at:
-// after a key rotation the browser re-posts the same endpoint under the
-// new key, and a row whose vapid_public never updates keeps failing
-// forever while looking healthy (§8.2).
+// UpsertSubscription records the subscription that the client posted, keyed
+// by endpoint. vapidPublic is the key that the *client* says it subscribed
+// under, never the server's configured value (§7.1). The conflict branch
+// must overwrite p256dh, auth, AND vapid_public, and keep created_at. After a
+// key rotation, the browser re-posts the same endpoint under the new key. A
+// row whose vapid_public never updates keeps failing forever, and still
+// looks healthy (§8.2).
 func (s *Store) UpsertSubscription(ctx context.Context, endpoint, p256dh, auth, vapidPublic string, now int64) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO push_subscriptions (endpoint, p256dh, auth, vapid_public, created_at)
@@ -21,8 +21,8 @@ func (s *Store) UpsertSubscription(ctx context.Context, endpoint, p256dh, auth, 
 	return err
 }
 
-// DeleteSubscription removes the row for endpoint; deleting a stranger is
-// a no-op, matching the endpoint's unconditional 204 (§8.2).
+// DeleteSubscription removes the row for endpoint. For an unknown endpoint
+// it is a no-op, which matches the endpoint's unconditional 204 (§8.2).
 func (s *Store) DeleteSubscription(ctx context.Context, endpoint string) error {
 	_, err := s.db.ExecContext(ctx,
 		"DELETE FROM push_subscriptions WHERE endpoint = ?", endpoint)
@@ -38,8 +38,9 @@ func (s *Store) SubscriptionCount(ctx context.Context) (int, error) {
 }
 
 // Subscription is one push_subscriptions row as the sender needs it.
-// VAPIDPublic is the key the subscription is bound to — compared against
-// the configured key on a 401/403 to tell a stale key from a bug (§7.1).
+// VAPIDPublic is the key that the subscription is bound to. On a 401/403,
+// the sender compares it with the configured key to tell a stale key from a
+// bug (§7.1).
 type Subscription struct {
 	Endpoint    string
 	P256dh      string
@@ -67,8 +68,8 @@ func (s *Store) ListSubscriptions(ctx context.Context) ([]Subscription, error) {
 }
 
 // MismatchedKeyCount counts subscriptions bound to a key other than the
-// configured one — the §7.1 boot WARNING that turns three weeks of silent
-// failures into a startup line.
+// configured one. It backs the §7.1 boot WARNING, which turns three weeks
+// of silent failures into a startup line.
 func (s *Store) MismatchedKeyCount(ctx context.Context, configuredKey string) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx,

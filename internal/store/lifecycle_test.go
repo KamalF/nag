@@ -17,9 +17,9 @@ func newStore(t *testing.T) *Store {
 	return s
 }
 
-// insertRow writes a reminder with exact stamps — the sweep that produces
-// the fired-and-held shape lands in a later commit, and these tests pin
-// §4.1 against every shape it will produce.
+// insertRow writes a reminder with exact stamps. With it, these tests pin
+// §4.1 against every shape that the sweep produces, the fired-and-held shape
+// included, without a run of the sweep.
 func insertRow(t *testing.T, s *Store, dueAt int64, notified, pushed, done *int64) int64 {
 	t.Helper()
 	res, err := s.db.Exec(

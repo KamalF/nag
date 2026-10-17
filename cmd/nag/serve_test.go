@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// §10.1's order: the server stops, the sweep is cancelled and waited for,
+// §10.1's order: the server stops, the sweep is canceled and waited for,
 // and only then is the database closed — never under a tick still writing.
 func TestServeUntilShutdownOrder(t *testing.T) {
 	var mu sync.Mutex

@@ -113,9 +113,9 @@ func TestSweepMarkSkipsDoneRows(t *testing.T) {
 	}
 }
 
-// Phase 2 selects the held set in due order and stamps exactly it — the
-// predicate-not-id-list UPDATE must not reach a done row or an unmarked
-// one, and it must reach every held row however many there are (§7.3).
+// Phase 2 selects the held set in due order and stamps exactly that set.
+// The predicate-not-id-list UPDATE must not reach a done row or an unmarked
+// one. It must reach every held row, however many there are (§7.3).
 func TestSweepCollectDigestStampsExactlyTheHeldSet(t *testing.T) {
 	s := newStore(t)
 	late := insertRow(t, s, 2000, ptr(int64(2100)), nil, nil)
@@ -166,9 +166,9 @@ func TestHeldCountCountsOnlyWaitingRows(t *testing.T) {
 	}
 }
 
-// The age split decides what is sent, never what is stamped: a row too late
-// to notify about still leaves the held set, or the next tick would find it
-// again at an age phase 2 has already refused (§7.3).
+// The age split decides what is sent, never what is stamped. A row too late
+// to notify about still leaves the held set. Otherwise the next tick finds
+// it again, at an age that phase 2 already refused (§7.3).
 func TestSweepCollectDigestStampsTheRowsItRefusesToSend(t *testing.T) {
 	s := newStore(t)
 	stranded := insertRow(t, s, 1000, ptr(int64(1100)), nil, nil) // 9000 s late at now=10000

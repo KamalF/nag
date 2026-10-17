@@ -52,7 +52,7 @@ func assertLocal(t *testing.T, due time.Time, want string) {
 
 func TestClockAcrossSpringForward(t *testing.T) {
 	// Sat Mar 28 10:00 CET → "tomorrow 09:00" must be 09:00 CEST: 22 real
-	// hours away, not now+24h (which would read 10:00).
+	// hours away, not now+24h (that gives 10:00).
 	now := time.Date(2026, 3, 28, 10, 0, 0, 0, paris)
 	due := evaluate(t, clockPreset("09:00", 1), now)
 	assertLocal(t, due, "2026-03-29 09:00 +0200")
@@ -73,7 +73,7 @@ func TestClockAcrossFallBack(t *testing.T) {
 }
 
 func TestClockAtInsideSpringForwardGap(t *testing.T) {
-	// 02:30 does not exist on Mar 29 — time.Date normalises it forward to
+	// 02:30 does not exist on Mar 29. time.Date normalizes it forward to
 	// 03:30, and §6 says to accept exactly that, not detect the gap.
 	now := time.Date(2026, 3, 28, 10, 0, 0, 0, paris)
 	due := evaluate(t, clockPreset("02:30", 1), now)

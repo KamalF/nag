@@ -9,13 +9,15 @@ import (
 	webpush "github.com/SherClockHolmes/webpush-go"
 )
 
-// placeholderSubject is emitted literally by genkeys and rejected at boot
-// (§5.1) — replacing it is the one required hand edit of the setup.
+// placeholderSubject is the literal subject that genkeys writes. Boot
+// rejects it (§5.1), so to replace it is the one required hand edit of the
+// setup.
 const placeholderSubject = "mailto:you@example.com"
 
-// runGenkeys emits a complete, pipeable env file on stdout — nothing else,
-// so `docker compose run --rm -T nag genkeys >> nag.env` is safe. Anything
-// advisory goes to stderr, surviving the redirection (§5.2).
+// runGenkeys writes a complete, pipeable env file to stdout and nothing
+// else, so `docker compose run --rm -T nag genkeys >> nag.env` is safe. All
+// advice goes to stderr, so the operator still sees it after the redirection
+// (§5.2).
 func runGenkeys(stdout, stderr io.Writer) int {
 	token := make([]byte, 32)
 	if _, err := rand.Read(token); err != nil {

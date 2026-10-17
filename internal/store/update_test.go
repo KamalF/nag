@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// mustGet reads the pre-image UpdateReminder now takes — the row as the
+// mustGet reads the pre-image that UpdateReminder takes: the row as the
 // caller just read it.
 func mustGet(t *testing.T, s *Store, id int64) Reminder {
 	t.Helper()
@@ -116,8 +116,8 @@ func TestUpdateChannelsClearRule(t *testing.T) {
 	})
 }
 
-// A row deleted between the caller's read and the update surfaces as
-// ErrNoRows, which the PATCH handler maps to §8.3's unknown-{id} 404.
+// A row deleted between the caller's read and the update comes back as
+// ErrNoRows. The PATCH handler maps it to §8.3's unknown-{id} 404.
 func TestUpdateVanishedRowIsErrNoRows(t *testing.T) {
 	s := newStore(t)
 	id := insertRow(t, s, 10, nil, nil, nil)

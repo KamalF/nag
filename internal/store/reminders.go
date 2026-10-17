@@ -10,9 +10,9 @@ import (
 )
 
 // Reminder is one row of the §4 reminders table. Pointer fields are the
-// NULLable columns. ExtraChannels is the decoded JSON array — always
-// canonical (de-duplicated, sorted) because §8.3 canonicalises before
-// every write.
+// NULLable columns. ExtraChannels is the decoded JSON array. It is always
+// canonical (de-duplicated, sorted), because §8.3 canonicalizes before every
+// write.
 type Reminder struct {
 	ID            int64
 	Text          string
@@ -28,9 +28,9 @@ type Reminder struct {
 const reminderColumns = "id, text, due_at, notified_at, pushed_at, done_at, created_at, extra_channels, delivery_error"
 
 // backdatedStamps is §4.1's born-notified rule, shared by create and
-// re-time: a due_at that is not in the future stamps both lifecycle
-// columns to now, so the row is invisible to the sweep's phase 1 and can
-// never become a digest candidate.
+// re-time. A due_at that is not in the future stamps both lifecycle columns
+// to now. The row is then invisible to the sweep's phase 1, and can never
+// become a digest candidate.
 func backdatedStamps(dueAt, now int64) (notified, pushed *int64) {
 	if dueAt <= now {
 		return &now, &now
@@ -38,9 +38,9 @@ func backdatedStamps(dueAt, now int64) (notified, pushed *int64) {
 	return nil, nil
 }
 
-// CreateReminder inserts a reminder. When dueAt is not after now, the same
-// statement stamps notified_at = pushed_at = now (§4.1): a backdated write
-// appears in the overdue list immediately and never notifies.
+// CreateReminder inserts a reminder. If dueAt is not after now, the same
+// statement stamps notified_at = pushed_at = now (§4.1). Then a backdated
+// write appears in the overdue list immediately and never notifies.
 func (s *Store) CreateReminder(ctx context.Context, text string, dueAt int64, extraChannels []string, now int64) (Reminder, error) {
 	extraChannels = canonicalChannelList(extraChannels)
 	notified, pushed := backdatedStamps(dueAt, now)
@@ -65,8 +65,8 @@ func (s *Store) GetReminder(ctx context.Context, id int64) (Reminder, error) {
 }
 
 // ListPending returns every un-cleared reminder, sorted by due_at then id
-// (§8.2): the id tiebreak is what keeps two same-minute rows from swapping
-// places between polls.
+// (§8.2). The id tiebreak keeps two same-minute rows from swapping places
+// between polls.
 func (s *Store) ListPending(ctx context.Context) ([]Reminder, error) {
 	rows, err := s.db.QueryContext(ctx,
 		"SELECT "+reminderColumns+" FROM reminders WHERE done_at IS NULL ORDER BY due_at ASC, id ASC")
@@ -86,15 +86,15 @@ func (s *Store) ListPending(ctx context.Context) ([]Reminder, error) {
 }
 
 // Channel is the client-visible half of a channels row. The URL never
-// reaches the API layer in any form (§4.1) — the send path gets its own
-// accessor when it lands.
+// reaches the API layer in any form (§4.1). The send path reads ChannelRow
+// instead.
 type Channel struct {
 	Name    string
 	Enabled bool
 }
 
-// ListChannels returns every channel in name order (§8.2) — chip order in
-// the UI, never re-sorted client-side.
+// ListChannels returns every channel in name order (§8.2). This is the chip
+// order in the UI, and the client never re-sorts it.
 func (s *Store) ListChannels(ctx context.Context) ([]Channel, error) {
 	rows, err := s.db.QueryContext(ctx, "SELECT name, enabled FROM channels ORDER BY name")
 	if err != nil {
@@ -112,8 +112,8 @@ func (s *Store) ListChannels(ctx context.Context) ([]Channel, error) {
 	return out, rows.Err()
 }
 
-// ReminderUpdate is one PATCH's writes. nil means "leave unchanged";
-// ExtraChannels pointing at an empty slice means "clear the list" —
+// ReminderUpdate is one PATCH's writes. nil means "leave unchanged".
+// ExtraChannels that points at an empty slice means "clear the list":
 // presence and null are different answers in §8.3.
 type ReminderUpdate struct {
 	Text          *string
@@ -121,13 +121,13 @@ type ReminderUpdate struct {
 	ExtraChannels *[]string
 }
 
-// UpdateReminder applies u to current — the row as the caller just read it
-// (one read, one pre-image) — in one UPDATE (§4.1). A DueAt is a re-time:
-// notified_at and pushed_at reset (or stamp to now on a backdated value,
-// exactly as on create), done_at clears, delivery_error clears. A changed
-// ExtraChannels list — an ordered comparison of the canonical forms — also
-// clears delivery_error; an identical list touches nothing, so re-saving
-// a row without changing its channels is not a clear.
+// UpdateReminder applies u to current in one UPDATE (§4.1). current is the
+// row as the caller just read it (one read, one pre-image). A DueAt is a
+// re-time: notified_at and pushed_at reset (or stamp to now on a backdated
+// value, exactly as on create), and done_at and delivery_error clear. A
+// changed ExtraChannels list also clears delivery_error. "Changed" is an
+// ordered comparison of the canonical forms. An identical list touches
+// nothing, so a re-save of a row with the same channels is not a clear.
 func (s *Store) UpdateReminder(ctx context.Context, current Reminder, u ReminderUpdate, now int64) (Reminder, error) {
 	var set []string
 	var args []any
@@ -161,9 +161,9 @@ func (s *Store) UpdateReminder(ctx context.Context, current Reminder, u Reminder
 }
 
 // MarkDone stamps done_at = now and returns the row. On a row that is
-// already done it is a successful no-op keeping the original done_at
-// (§8.2): re-stamping would push the retention clock forward on every
-// double-tap. sql.ErrNoRows when the id does not exist.
+// already done, it is a successful no-op that keeps the original done_at
+// (§8.2). A re-stamp pushes the retention clock forward on every double-tap.
+// It returns sql.ErrNoRows if the id does not exist.
 func (s *Store) MarkDone(ctx context.Context, id, now int64) (Reminder, error) {
 	_, err := s.db.ExecContext(ctx,
 		"UPDATE reminders SET done_at = ? WHERE id = ? AND done_at IS NULL", now, id)
@@ -173,13 +173,13 @@ func (s *Store) MarkDone(ctx context.Context, id, now int64) (Reminder, error) {
 	return s.GetReminder(ctx, id)
 }
 
-// MarkUndone clears done_at, and in the same statement stamps
+// MarkUndone clears done_at. In the same statement, it stamps
 // pushed_at = now exactly when notified_at IS NOT NULL AND pushed_at IS
-// NULL (§4.1): a row cleared during a cooldown was dropped from the held
-// set by done_at, and un-clearing it later must not walk it back into a
-// digest — while a row cleared before it ever fired keeps its NULLs and
-// returns as a live phase-1 candidate. On a row that isn't done it is a
-// successful no-op. sql.ErrNoRows when the id does not exist.
+// NULL (§4.1). If a row is cleared during a cooldown, done_at drops it from
+// the held set, and a later un-clear must not walk it back into a digest. A
+// row cleared before it ever fired keeps its NULLs, and returns as a live
+// phase-1 candidate. On a row that is not done, it is a successful no-op.
+// It returns sql.ErrNoRows if the id does not exist.
 func (s *Store) MarkUndone(ctx context.Context, id, now int64) (Reminder, error) {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE reminders SET
@@ -243,8 +243,8 @@ func nullableInt(v sql.NullInt64) *int64 {
 
 // canonicalChannelList is the one stored form of a channel set (§8.3):
 // de-duplicated and sorted, so §4.1's "the list differs" test is a plain
-// ordered comparison. The store owns this invariant — its own comparison
-// in UpdateReminder depends on it, whichever caller writes.
+// ordered comparison. The store owns this invariant: its own comparison in
+// UpdateReminder depends on it, whichever caller writes.
 func canonicalChannelList(names []string) []string {
 	if len(names) == 0 {
 		return nil
@@ -254,8 +254,8 @@ func canonicalChannelList(names []string) []string {
 	return slices.Compact(canonical)
 }
 
-// encodeChannels stores an empty list as NULL — §4's column is nullable
-// and §8.2 re-materialises [] on the way out.
+// encodeChannels stores an empty list as NULL: §4's column is nullable, and
+// §8.2 re-materializes [] on the way out.
 func encodeChannels(names []string) *string {
 	if len(names) == 0 {
 		return nil

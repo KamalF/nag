@@ -33,7 +33,7 @@ func TestHealthcheckExitCode(t *testing.T) {
 	for status, want := range map[int]int{http.StatusOK: 0, http.StatusInternalServerError: 1} {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path != "/healthz" {
-				t.Errorf("dialled %s", r.URL.Path)
+				t.Errorf("dialed %s", r.URL.Path)
 			}
 			w.WriteHeader(status)
 		}))

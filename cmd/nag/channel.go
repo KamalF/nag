@@ -15,11 +15,11 @@ import (
 	"github.com/KamalF/nag/internal/store"
 )
 
-// slugPattern is §7.4's channel name rule. The name is a JSON array element
-// in extra_channels, a chip label and a CLI argument, and SQLite's UNIQUE on
-// TEXT is case-sensitive — so "ntfy" and "NTFY" would be two rows rendering
-// two identical chips. Lowercase at the door is one rule instead of
-// COLLATE NOCASE plus a matching fold at every send.
+// slugPattern is the channel name rule of §7.4. The name is a JSON array
+// element in extra_channels, a chip label and a CLI argument. SQLite's UNIQUE
+// on TEXT is case-sensitive. Without this rule, "ntfy" and "NTFY" are two rows
+// that show two identical chips. A rule that accepts only lowercase at input
+// is one rule. COLLATE NOCASE also needs a matching fold at every send.
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
 
 const channelUsage = `usage: nag channel add <name> <shoutrrr-url>
@@ -31,11 +31,11 @@ const channelUsage = `usage: nag channel add <name> <shoutrrr-url>
 `
 
 // runChannel is `nag channel …` (§7.4). The final image has no shell and no
-// sqlite3, so this is the only way to manage the table, and there is no API
-// for it: a URL carries secrets, and the write path is a shell you already
-// have to be on the box to use. It needs NAG_DB and nothing else, and opens
-// it through the same store.Open as serve — so it creates and migrates the
-// file if it does not exist yet (§5.1).
+// sqlite3, so this command is the only way to manage the table. There is no
+// API for it either: a URL carries secrets, and to use this write path you
+// must already have a shell on the box. It needs NAG_DB and nothing else. It
+// opens the database through the same store.Open as serve, so it creates and
+// migrates the file if the file does not exist yet (§5.1).
 func runChannel(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprint(stderr, channelUsage)
@@ -76,8 +76,8 @@ func runChannel(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// describeChannelError says plainly what a busy database means: the serving
-// container holds the write lock and busy_timeout ran out (§7.4).
+// describeChannelError says in plain words what a busy database means: the
+// serving container holds the write lock, and busy_timeout ran out (§7.4).
 func describeChannelError(err error) error {
 	if store.IsBusy(err) {
 		return errors.New("the database is locked — the running server is probably writing to it; retry in a moment")
@@ -85,10 +85,11 @@ func describeChannelError(err error) error {
 	return err
 }
 
-// channelAdd hands the URL to shoutrrr's router before writing the row and
-// refuses one it cannot parse, naming the parse error: otherwise a typo is
-// stored happily and surfaces weeks later as a delivery_error on a reminder
-// you cared about.
+// channelAdd gives the URL to shoutrrr's router before it writes the row. If
+// the router cannot parse the URL, channelAdd refuses it and names the parse
+// error. Without this check, the row stores a typo with no complaint, and the
+// typo shows weeks later as a delivery_error on a reminder that you cared
+// about.
 func channelAdd(ctx context.Context, st *store.Store, name, rawURL string, stdout io.Writer) error {
 	if !slugPattern.MatchString(name) {
 		return fmt.Errorf("channel name %s must match %s", shownName(name), slugPattern)
@@ -106,7 +107,7 @@ func channelAdd(ctx context.Context, st *store.Store, name, rawURL string, stdou
 	return nil
 }
 
-// channelList prints every channel with its URL masked — never in full.
+// channelList prints every channel with its URL masked, never in full.
 func channelList(ctx context.Context, st *store.Store, stdout io.Writer) error {
 	rows, err := st.ChannelRows(ctx)
 	if err != nil {
@@ -122,10 +123,10 @@ func channelList(ctx context.Context, st *store.Store, stdout io.Writer) error {
 	return nil
 }
 
-// channelRemove warns and proceeds — no --force, since there are no flags
-// (§3) and a prompt would be dead weight in a compose run that is not
-// always a TTY. Reminders still naming the channel become orphans, which
-// are defined behaviour (§4.1).
+// channelRemove warns and then removes the channel. There is no --force,
+// because there are no flags (§3). A prompt is dead weight in a compose run,
+// which is not always a TTY. Reminders that still name the channel become
+// orphans, and orphans are defined behavior (§4.1).
 func channelRemove(ctx context.Context, st *store.Store, name string, stdout io.Writer) error {
 	refs, err := st.ChannelReferences(ctx, name)
 	if err != nil {
@@ -167,10 +168,10 @@ func noSuchChannel(name string) error {
 	return fmt.Errorf("no channel named %s", shownName(name))
 }
 
-// shownName quotes a name for an error message — unless it is a URL typed
-// where the name goes (`add` with its arguments swapped, `test` given the
-// URL), which would print the credential back; that is masked like any
-// URL this command shows (§7.4).
+// shownName quotes a name for an error message. The exception is a URL typed
+// where the name goes (`add` with its arguments swapped, or `test` given the
+// URL). A quoted URL prints the credential back, so shownName masks it like
+// any URL that this command shows (§7.4).
 func shownName(name string) string {
 	if strings.Contains(name, "://") {
 		return maskChannelURL(name)
@@ -184,13 +185,13 @@ const testMessage = "Nag test notification"
 // errTestFailed makes a failed test exit 1 after its line is printed.
 var errTestFailed = errors.New("the test send failed")
 
-// channelTest is the fan-out counterpart of POST /api/push/test: the "did
-// that work" answer at the moment you paste a URL, not when a reminder
-// fires. It sends to a disabled channel too — the question is the URL, not
-// the mute — and says so. It uses the sweep's 10-second wrapper and
-// classification, so the word it prints on a dead host is the word a
-// delivery_error would have held; nothing here holds a WriteTimeout open,
-// so there is no shorter budget (§7.4).
+// channelTest is the fan-out counterpart of POST /api/push/test. It answers
+// "did that work" at the moment you paste a URL, not when a reminder fires.
+// It also sends to a disabled channel, and says so: the question is the URL,
+// not the mute. It uses the sweep's 10-second wrapper and classification. As
+// a result, the word that it prints for a dead host is the word that a
+// delivery_error holds for the same failure. Nothing here holds a
+// WriteTimeout open, so this command uses no shorter budget (§7.4).
 func channelTest(ctx context.Context, st *store.Store, name string, stdout io.Writer) error {
 	c, err := st.ChannelByName(ctx, name)
 	if errors.Is(err, store.ErrNoSuchChannel) {
@@ -212,17 +213,17 @@ func channelTest(ctx context.Context, st *store.Store, name string, stdout io.Wr
 }
 
 // redactURL removes the URL and its secret-bearing parts from a library
-// message before it is printed. shoutrrr's parse errors routinely embed the
-// URL whole, or just its token ("invalid telegram token: …"), and no URL is
-// ever printed unmasked (§7.4) — not even back to the operator who typed it,
-// since `compose run` output is captured wherever it goes. What is left is
-// the parse error itself, which is what add must name.
+// message before the message is printed. shoutrrr's parse errors often embed
+// the whole URL, or only its token ("invalid telegram token: …"). No URL is
+// ever printed unmasked (§7.4), not even to the operator who typed it,
+// because `compose run` output is captured wherever it goes. What is left is
+// the parse error itself, and add must name that error.
 func redactURL(message, rawURL string) string {
 	secrets := []string{rawURL}
 	if u, err := url.Parse(rawURL); err == nil {
-		// some services keep the key in the host (wecom://<key>); others
+		// some services keep the key in the host (wecom://<key>). Others
 		// use their own name as a fixed host (telegram://…@telegram), and
-		// that one is kept so the message still names the service
+		// that host is kept so that the message still names the service
 		service, _, _ := strings.Cut(u.Scheme, "+")
 		for _, host := range []string{u.Host, u.Hostname()} {
 			if !strings.EqualFold(host, service) {
@@ -241,11 +242,11 @@ func redactURL(message, rawURL string) string {
 		}
 		secrets = append(secrets, strings.Split(strings.Trim(u.Path, "/"), "/")...)
 	} else if _, rest, ok := strings.Cut(rawURL, "://"); ok {
-		// unparseable: whatever follows the scheme may be a credential
+		// unparseable: all text after the scheme can be a credential
 		secrets = append(secrets, rest)
 	}
-	// shoutrrr prints values through %q, so each secret is also looked for
-	// in its quoted form — a backslash or quote inside it is escaped there
+	// shoutrrr prints values through %q, which escapes a backslash or a
+	// quote. So the search also looks for each secret in its quoted form
 	for _, secret := range secrets {
 		secrets = append(secrets, strings.Trim(strconv.Quote(secret), `"`))
 	}
@@ -259,13 +260,14 @@ func redactURL(message, rawURL string) string {
 	return message
 }
 
-// maskChannelURL is §7.4's pinned mask: the scheme and a literal "…" that
-// stands for everything else. Services disagree about where the secret
-// goes — the userinfo and the query (ntfy, telegram), the last path segment
-// (gotify's token, a webhook's, a topic on public ntfy.sh), the host itself
-// (ifttt's and wecom's keys, pushbullet's dotted o.… token) — so no part
-// past the scheme is safe to print, and no rule short of a per-service
-// table could pick one out. The channel's name says which channel it is.
+// maskChannelURL is the pinned mask of §7.4: the scheme, then a literal "…"
+// that stands for everything else. Services put the secret in different
+// places. It can be in the userinfo and the query (ntfy, telegram), or in the
+// last path segment (gotify's token, a webhook's, a topic on public ntfy.sh).
+// It can also be the host itself (ifttt's and wecom's keys, pushbullet's
+// dotted o.… token). So no part after the scheme is safe to print, and only a
+// per-service table can find the secret. The channel's name says which
+// channel it is.
 //
 //	ntfy://user:tok_abc123@ntfy.example.com/alerts → ntfy://…
 func maskChannelURL(raw string) string {

@@ -11,11 +11,11 @@ import (
 // healthcheckTimeout is §10.1's bound: Docker's HEALTHCHECK allows 5 s.
 const healthcheckTimeout = 2 * time.Second
 
-// runHealthcheck is `nag healthcheck` for the Dockerfile's HEALTHCHECK: the
-// scratch image has no curl, so the binary asks its own /healthz — which
-// answers 200 only after SELECT 1 — and exits 0 only on a 200. It needs
-// NAG_ADDR and nothing else. Nothing acts on the result (§10.1): it is a
-// status read in `docker ps`, not a self-heal.
+// runHealthcheck is `nag healthcheck` for the Dockerfile's HEALTHCHECK. The
+// scratch image has no curl, so the binary asks its own /healthz. /healthz
+// answers 200 only after SELECT 1, and the command exits 0 only on a 200. It
+// needs NAG_ADDR and nothing else. Nothing acts on the result (§10.1): it is
+// a status to read in `docker ps`, not a self-heal.
 func runHealthcheck(stderr io.Writer) int {
 	url, err := healthcheckURL(envOr("NAG_ADDR", defaultAddr))
 	if err != nil {
@@ -36,11 +36,11 @@ func runHealthcheck(stderr io.Writer) int {
 	return 0
 }
 
-// healthcheckURL derives the URL from NAG_ADDR: keep the port, and use the
-// host as given unless it is empty, 0.0.0.0 or :: — a listen-on-everything
-// address, which is no address to dial — in which case dial 127.0.0.1. No
-// second env var, and it stays right if NAG_ADDR is narrowed to one
-// interface later.
+// healthcheckURL derives the URL from NAG_ADDR. It keeps the port. If the
+// host is empty, 0.0.0.0 or ::, it dials 127.0.0.1, because a
+// listen-on-everything address is not an address to dial. Otherwise it uses
+// the host as given. This needs no second env var, and stays correct if
+// NAG_ADDR is later narrowed to one interface.
 func healthcheckURL(addr string) (string, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {

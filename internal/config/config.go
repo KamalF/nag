@@ -1,6 +1,6 @@
-// Package config loads the TOML behaviour file (§5.3): types, the embedded
+// Package config loads the TOML behavior file (§5.3): types, the embedded
 // default written out on first boot, validation (§5.4, §5.5), and the live
-// copy SIGHUP replaces (live.go).
+// copy that SIGHUP replaces (live.go).
 package config
 
 import (
@@ -30,8 +30,8 @@ type General struct {
 	RetentionDays int    `toml:"retention_days"`
 }
 
-// Picker constrains only the picker sheet (§5.4) — never when reminders
-// may fire.
+// Picker constrains only the picker sheet (§5.4). It never constrains when
+// reminders can fire.
 type Picker struct {
 	HourMin     int    `toml:"hour_min"     json:"hour_min"`
 	HourMax     int    `toml:"hour_max"     json:"hour_max"`
@@ -40,10 +40,10 @@ type Picker struct {
 	WeekStart   string `toml:"week_start"   json:"week_start"`
 }
 
-// Preset carries the union of every kind's fields. The kind-specific ones
-// are pointers because §5.4 makes *presence* meaningful: a field outside
-// its kind's set is a config error, not noise, so nil ("absent from the
-// file") and a set zero value must stay distinguishable.
+// Preset carries the union of every kind's fields. The kind-specific fields
+// are pointers because §5.4 makes *presence* meaningful. A field outside its
+// kind's set is a config error, not noise. So nil ("absent from the file")
+// and a set zero value must stay distinguishable.
 type Preset struct {
 	Key       string  `toml:"key"`
 	Label     string  `toml:"label"`
@@ -56,17 +56,17 @@ type Preset struct {
 	Quick     bool    `toml:"quick"`
 }
 
-// Load reads, decodes, and validates the TOML config at path. When the path
-// is genuinely absent it first writes the embedded default there and reports
-// wroteDefault = true. A file that is present but unreadable, unparseable,
-// or invalid is an error naming the path — never overwritten with the
-// default (§5.3).
+// Load reads, decodes, and validates the TOML config at path. If the path is
+// genuinely absent, Load first writes the embedded default there and reports
+// wroteDefault = true. A file that is present but unreadable, unparseable, or
+// invalid is an error that names the path. Load never overwrites that file
+// with the default (§5.3).
 func Load(path string) (cfg *Config, wroteDefault bool, err error) {
 	cfg, err = Check(path)
 	if err == nil || !errors.Is(err, fs.ErrNotExist) {
 		return cfg, false, err
 	}
-	// genuinely absent — the only case that writes the default
+	// genuinely absent: the only case that writes the default
 	if werr := os.WriteFile(path, defaultTOML, 0o644); werr != nil {
 		return nil, false, fmt.Errorf("write default config to %s: %w", path, werr)
 	}
@@ -77,10 +77,10 @@ func Load(path string) (cfg *Config, wroteDefault bool, err error) {
 	return cfg, true, nil
 }
 
-// Check loads and validates the config exactly as boot does, except that an
-// absent file is an error rather than a prompt to write the default —
+// Check loads and validates the config exactly as boot does, with one
+// exception: an absent file is an error, not a prompt to write the default.
 // `nag config check` never fixes anything silently (§5.5). The reload path
-// (M4) reuses it for the same reason.
+// uses Check for the same reason.
 func Check(path string) (*Config, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -102,9 +102,9 @@ func parse(raw []byte) (*Config, error) {
 		if errors.As(err, &strict) {
 			return nil, unknownKeysError(strict)
 		}
-		// a syntax or type error: §5.5 wants every message located, and a
-		// bare "integers cannot have leading zeroes" names no line and no
-		// preset in a file with several of them
+		// a syntax or type error: §5.5 wants every message located. A bare
+		// "integers cannot have leading zeroes" names no line and no preset
+		// in a file with several presets
 		var decodeErr *toml.DecodeError
 		if errors.As(err, &decodeErr) {
 			row, col := decodeErr.Position()
@@ -122,9 +122,9 @@ func parse(raw []byte) (*Config, error) {
 	return &cfg, nil
 }
 
-// unknownKeysError names every key the file states that the app never reads
-// (§5.5): silently ignoring one means a chip behaving as though the line
-// were not there.
+// unknownKeysError names every key in the file that the app never reads
+// (§5.5). If the app silently ignores such a key, a chip behaves as if the
+// line is not there.
 func unknownKeysError(strict *toml.StrictMissingError) error {
 	names := make([]string, 0, len(strict.Errors))
 	for _, e := range strict.Errors {

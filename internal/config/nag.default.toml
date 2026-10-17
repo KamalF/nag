@@ -1,6 +1,6 @@
 [general]
 timezone       = "Europe/Paris"
-default_preset = "tomorrow"     # bare Enter in the capture bar
+default_preset = "tomorrow"     # used by a bare Enter in the capture bar
 retention_days = 30             # 0 = keep cleared reminders forever
 
 [picker]

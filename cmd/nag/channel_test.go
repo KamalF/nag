@@ -67,8 +67,8 @@ func TestChannelAddSlugRule(t *testing.T) {
 	}
 }
 
-// §7.4: the URL is parsed before the row is written, and a duplicate name
-// is refused.
+// §7.4: add parses the URL before it writes the row, and refuses a duplicate
+// name.
 func TestChannelAddRefusals(t *testing.T) {
 	cli := newChannelCLI(t)
 	if code, _, stderr := cli.run("add", "bad", "nosuchservice://x/y"); code != 1 || !strings.Contains(stderr, "shoutrrr") {
@@ -86,8 +86,8 @@ func TestChannelAddRefusals(t *testing.T) {
 	}
 }
 
-// No URL is printed unmasked even on add's refusal: shoutrrr's parse
-// errors embed the URL whole, or just its token.
+// No URL is printed unmasked, not even on add's refusal: shoutrrr's parse
+// errors embed the whole URL, or only its token.
 func TestChannelAddRefusalHidesTheURL(t *testing.T) {
 	for _, raw := range []string{
 		"ntfy://user:tok_SECRET@ntfy.example.com:badport/alerts",
@@ -109,8 +109,8 @@ func TestChannelAddRefusalHidesTheURL(t *testing.T) {
 			t.Errorf("refusal does not name the parse error: %q", stderr)
 		}
 	}
-	// a fixed host that is the service's own name is no secret, and
-	// eliding it would erase the service from the message
+	// a fixed host that is the service's own name is not a secret. If the
+	// mask removes it, the message no longer names the service
 	cli := newChannelCLI(t)
 	_, _, stderr := cli.run("add", "x", "telegram://tok_SECRET@telegram")
 	if !strings.Contains(stderr, "telegram: invalid telegram token") {
@@ -215,8 +215,8 @@ func TestChannelUsage(t *testing.T) {
 	}
 }
 
-// §7.4: test sends now, to a disabled channel too, and prints the same
-// classification a delivery_error would hold.
+// §7.4: test sends now, also to a disabled channel, and prints the same
+// classification that a delivery_error holds.
 func TestChannelTest(t *testing.T) {
 	var got string
 	ok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -10,9 +10,9 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// migrations is the ordered list of schema versions (§4.2); PRAGMA
-// user_version counts how many have run. Append only — editing a shipped
-// entry changes DDL that existing databases will never re-run.
+// migrations is the ordered list of schema versions (§4.2). PRAGMA
+// user_version counts how many have run. Append only: an edit to a shipped
+// entry changes DDL that existing databases never re-run.
 var migrations = []string{
 	// 1 — initial schema (§4)
 	`
@@ -53,10 +53,11 @@ type Store struct {
 	db *sql.DB
 }
 
-// Open opens the SQLite file at path — creating and migrating it if absent —
-// and returns a handle pinned to one connection (§4.3). It refuses, naming
-// the path, when the file cannot be opened or migrated, and refuses when the
-// database's schema version is newer than this binary knows (§4.2).
+// Open opens the SQLite file at path, and creates and migrates it if it is
+// absent. It returns a handle pinned to one connection (§4.3). If the file
+// cannot be opened or migrated, Open refuses and names the path. If the
+// database's schema version is newer than this binary knows, Open also
+// refuses (§4.2).
 func Open(path string) (*Store, error) {
 	dsn := "file:" + path +
 		"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)"
@@ -67,7 +68,7 @@ func Open(path string) (*Store, error) {
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(0)
-	if err := db.Ping(); err != nil { // sql.Open is lazy; open the file now
+	if err := db.Ping(); err != nil { // sql.Open is lazy: open the file now
 		db.Close()
 		return nil, fmt.Errorf("open database %s: %w", path, err)
 	}
@@ -82,7 +83,7 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-// Healthy runs the §8.2 SELECT 1 — /healthz must not answer 200 over a
+// Healthy runs the §8.2 SELECT 1: /healthz must not answer 200 over a
 // broken database.
 func (s *Store) Healthy(ctx context.Context) error {
 	var one int

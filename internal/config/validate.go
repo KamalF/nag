@@ -18,9 +18,9 @@ var Weekdays = map[string]time.Weekday{
 }
 
 // validate applies the §5.5 rule list and the §5.4 per-kind field matrix.
-// It returns the first violation found, worded to name the offending preset
-// key (or [section].field) and the rejected value — the file is hand-edited
-// under SIGHUP, so a located error is the whole point (§5.5).
+// It returns the first violation that it finds. The message names the
+// offending preset key (or [section].field) and the rejected value. The file
+// is hand-edited under SIGHUP, so a located error is the whole point (§5.5).
 func validate(cfg *Config) error {
 	if err := validateGeneral(cfg.General); err != nil {
 		return err
@@ -49,9 +49,9 @@ func validate(cfg *Config) error {
 }
 
 func validateGeneral(g General) error {
-	// LoadLocation("") is UTC and "Local" is wherever the process runs —
-	// both nil-error, neither a timezone the file actually states, and a
-	// missing key must fail loudly (§5.5), not schedule in UTC silently.
+	// LoadLocation("") is UTC, and "Local" is wherever the process runs.
+	// Both give a nil error, but neither is a timezone that the file states.
+	// A missing key must fail loudly (§5.5), not schedule in UTC silently.
 	if g.Timezone == "" || g.Timezone == "Local" {
 		return fmt.Errorf("[general].timezone: %q is not a timezone name (e.g. \"Europe/Paris\")", g.Timezone)
 	}

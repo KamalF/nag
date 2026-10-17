@@ -9,8 +9,8 @@ import (
 	sqlite3 "modernc.org/sqlite/lib"
 )
 
-// ErrChannelExists and ErrNoSuchChannel are the two answers `nag channel`
-// turns into a sentence (§7.4).
+// ErrChannelExists and ErrNoSuchChannel are the two answers that
+// `nag channel` turns into a sentence (§7.4).
 var (
 	ErrChannelExists = errors.New("channel already exists")
 	ErrNoSuchChannel = errors.New("no such channel")
@@ -25,9 +25,9 @@ type ChannelRow struct {
 	Enabled bool
 }
 
-// AddChannel inserts an enabled channel. The name's UNIQUE constraint is
-// what rejects a duplicate; the caller has already checked the slug and
-// parsed the URL (§7.4).
+// AddChannel inserts an enabled channel. The name's UNIQUE constraint
+// rejects a duplicate. The caller checks the slug and parses the URL first
+// (§7.4).
 func (s *Store) AddChannel(ctx context.Context, name, url string) error {
 	_, err := s.db.ExecContext(ctx, "INSERT INTO channels (name, url, enabled) VALUES (?, ?, 1)", name, url)
 	var e *sqlite.Error
@@ -37,9 +37,10 @@ func (s *Store) AddChannel(ctx context.Context, name, url string) error {
 	return err
 }
 
-// IsBusy reports a database still locked after busy_timeout gave up — the
-// serving container holding the write lock while `nag channel` runs against
-// the same file (§4.3, §7.4). The primary code is the low byte.
+// IsBusy reports a database that is still locked after busy_timeout gave
+// up. The cause is the serving container, which holds the write lock while
+// `nag channel` runs against the same file (§4.3, §7.4). The primary code is
+// the low byte.
 func IsBusy(err error) bool {
 	var e *sqlite.Error
 	return errors.As(err, &e) && e.Code()&0xff == sqlite3.SQLITE_BUSY
@@ -85,8 +86,9 @@ func (s *Store) ChannelReferences(ctx context.Context, name string) (int, error)
 	return n, err
 }
 
-// RemoveChannel deletes the row. Reminders still naming it become orphans,
-// which is defined behaviour (§4.1): skipped at send time, kept on the row.
+// RemoveChannel deletes the row. Reminders that still name it become
+// orphans, which is defined behavior (§4.1): skipped at send time, kept on
+// the row.
 func (s *Store) RemoveChannel(ctx context.Context, name string) error {
 	return s.affectOne(ctx, "DELETE FROM channels WHERE name = ?", name)
 }

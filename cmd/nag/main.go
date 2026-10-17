@@ -1,9 +1,9 @@
 // Command nag is the single binary behind every subcommand (§3).
 //
-// There are no command-line flags anywhere, on any subcommand: everything
-// that varies is an environment variable (§5.1) or a TOML key (§5.3). The
-// default subcommand lives in the Dockerfile's CMD ["serve"] (§10) and
-// nowhere else — no argument here is the unknown-word case, never a default.
+// No subcommand has command-line flags. Everything that varies is an
+// environment variable (§5.1) or a TOML key (§5.3). The default subcommand
+// is set in the Dockerfile's CMD ["serve"] (§10) and nowhere else. Here, a
+// missing argument is the unknown-word case, never a default.
 package main
 
 import (
@@ -12,16 +12,16 @@ import (
 	"os"
 	"runtime"
 
-	// The scratch image has no tzdata (§2); timezone validation and preset
+	// The scratch image has no tzdata (§2). Timezone validation and preset
 	// arithmetic need the embedded copy everywhere the binary runs.
 	_ "time/tzdata"
 
 	"github.com/KamalF/nag/internal/config"
 )
 
-// version is the only build-time variable (§10), overridden with
-// -ldflags="-X main.version=...". It is printed by `nag version` and logged
-// at boot; the "dev" default marks a hand-built binary.
+// version is the only build-time variable (§10). The build overrides it with
+// -ldflags="-X main.version=...". `nag version` prints it, and serve logs it
+// at boot. The "dev" default marks a hand-built binary.
 var version = "dev"
 
 const usage = `usage: nag <subcommand>
@@ -67,10 +67,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 }
 
-// runConfigCheck validates NAG_CONFIG through the same code path as boot
-// and prints either the resolved preset list in file order or the located
-// error (§5.5). It never writes the default file — an absent config is an
-// error here, not something to fix silently.
+// runConfigCheck validates NAG_CONFIG through the same code path as boot.
+// It prints the resolved preset list in file order, or the located error
+// (§5.5). It never writes the default file: here an absent config is an
+// error, not something to fix silently.
 func runConfigCheck(stdout, stderr io.Writer) int {
 	cfg, err := config.Check(envOr("NAG_CONFIG", defaultConfig))
 	if err != nil {
