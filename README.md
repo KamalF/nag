@@ -21,7 +21,7 @@ must come back, and get an OS notification at that time.
   the number of overdue reminders.
 
 Nag has one user and runs one instance. It is a single Go binary with
-SQLite, shipped as a container image. [SPEC.md](SPEC.md) is the full
+SQLite, shipped as a container image. [docs/SPEC.md](docs/SPEC.md) is the full
 specification.
 
 ## Try it on your laptop
