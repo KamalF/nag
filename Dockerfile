@@ -12,7 +12,7 @@ ARG VERSION=dev
 ARG TARGETOS TARGETARCH
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
       -ldflags="-s -w -X main.version=${VERSION}" -o /nag ./cmd/nag
-# Copy /empty → /, not /emptytmp → /tmp. COPY of a directory copies its
+# Copy /empty → /, not /empty/tmp → /tmp. COPY of a directory copies its
 # contents. Only a copy of the parent makes tmp itself a copied entry, which
 # keeps its 1777 mode and takes --chown (§10.1). Under uid 65534, a
 # root-owned 0755 /tmp makes SQLite fail on its first temp file.
@@ -25,7 +25,8 @@ COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=build --chown=65534:65534 /empty /
 ENV TMPDIR=/tmp
 EXPOSE 8080
-# no /etc/passwd: a bare numeric uid, against host bind mounts chowned once
+# no /etc/passwd, so the user is a bare numeric uid. The host bind mounts
+# are chowned to this uid once, before the first start.
 USER 65534:65534
 HEALTHCHECK --interval=60s --timeout=5s --start-period=10s CMD ["/nag", "healthcheck"]
 ENTRYPOINT ["/nag"]

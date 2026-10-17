@@ -1,7 +1,8 @@
 # Architecture Decision Records
 
 One file per architectural decision, numbered sequentially and never renumbered. A decision
-that no longer holds is superseded by a new ADR, not edited away — the history is the point.
+that no longer holds is superseded by a new ADR, not edited away, so that the
+history stays.
 
 | # | Decision | Date |
 |---|----------|------|

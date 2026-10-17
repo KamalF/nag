@@ -71,14 +71,14 @@ docker compose run --rm -T nag genkeys >> nag.env
 2. The image runs as uid 65534 and has no shell, so you cannot change
    the ownership from inside the container. Do it once, here.
 3. Compose refuses to run any command while `nag.env` is missing, `genkeys`
-   included. Thus the file must exist first.
+   included. So the file must exist before you run `genkeys`.
 4. `genkeys` writes a complete env file to stdout. **Keep `-T`.** Without
-   it, some Compose versions allocate a TTY. The TTY changes each line
+   `-T`, some Compose versions allocate a TTY. The TTY changes each line
    ending to `\r\n`, and the `\r` becomes part of each key.
 
 Then do one manual edit. In `nag.env`, replace `mailto:you@example.com`
-with your own address. Push services use it to contact you. Nag does not
-start while the placeholder is there.
+with your own address. Push services use this address to contact you. Nag
+does not start while the placeholder is there.
 
 Start nag:
 
@@ -137,8 +137,8 @@ docker compose kill -s HUP nag
 ```
 
 `config check` prints the preset list or the exact error. If a reload
-finds an error, nag logs it and keeps the current configuration. Thus,
-always check first.
+finds an error, nag logs it and keeps the current configuration. So
+always check the file before a reload.
 
 ## Channels (optional)
 

@@ -1,5 +1,5 @@
 # Pushing a v* tag publishes ghcr.io/kamalf/nag:<version> and :latest,
-# for amd64 and arm64, with the tag stamped into `nag version`.
+# for amd64 and arm64. The tag becomes the version that `nag version` prints.
 name: release
 
 on:

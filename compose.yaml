@@ -8,12 +8,12 @@ services:
       - ./data:/data
       - ./config:/config
     env_file: ./nag.env
-    # loopback only: an HTTPS reverse proxy on this host sits in front
+    # loopback only: an HTTPS reverse proxy on this host forwards requests here
     # (service workers and Web Push need HTTPS)
     ports:
       - "127.0.0.1:8080:8080"
     restart: unless-stopped
     # a ceiling, not a budget: nag runs in a few tens of MB. With this limit,
     # a channel endpoint that answers with an endless body (shoutrrr reads it
-    # whole) restarts this container, not the box (SPEC §7.2)
+    # whole) restarts this container, not the host (SPEC §7.2)
     mem_limit: 256m

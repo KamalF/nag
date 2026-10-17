@@ -1,8 +1,8 @@
 # Icon sources
 
-`web/icons/` holds exactly four PNGs (§9.3) and nothing else — it is embedded
-into the binary. The SVGs they are rendered from live here, so the set can be
-regenerated after an edit:
+`web/icons/` holds exactly four PNGs (§9.3) and nothing else, because the
+directory is embedded into the binary. The SVGs that they are rendered from
+live here, so the set can be regenerated after an edit:
 
 ```
 rsvg-convert -w 192 -h 192 docs/icons/icon.svg          -o web/icons/192.png

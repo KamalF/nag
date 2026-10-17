@@ -1,6 +1,6 @@
-# Required, not hygiene (§10): the build context is the project directory,
-# which also holds nag.env (the VAPID private key) and data/ (the database).
-# Without this file, a bare COPY . . bakes both into the cached builder layer.
+# Required, not only good practice (§10): the build context is the project
+# directory, which also holds nag.env (the VAPID private key) and data/ (the database).
+# Without this file, a bare COPY . . stores both in the cached builder layer.
 nag.env
 .env
 data/
