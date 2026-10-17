@@ -102,9 +102,9 @@ func parse(raw []byte) (*Config, error) {
 		if errors.As(err, &strict) {
 			return nil, unknownKeysError(strict)
 		}
-		// a syntax or type error: §5.5 wants every message located. A bare
-		// "integers cannot have leading zeroes" names no line and no preset
-		// in a file with several presets
+		// a syntax or type error: §5.5 requires a location in every message.
+		// A bare "integers cannot have leading zeroes" names no line and no
+		// preset in a file with several presets
 		var decodeErr *toml.DecodeError
 		if errors.As(err, &decodeErr) {
 			row, col := decodeErr.Position()

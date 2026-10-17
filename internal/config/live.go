@@ -12,9 +12,10 @@ import (
 // Snapshot is one loaded config with everything derived from it: the
 // resolved timezone, and the config_version that it was published under.
 // Readers load the pointer once per request or tick, and use that snapshot
-// throughout (§5.5). This is the same discipline as reading now once. As a
-// result, a request never resolves a preset from one config and reports the
-// config_version of the next.
+// throughout (§5.5). The same rule applies to the current time, which a
+// request or tick also reads only once. As a result, a request never
+// resolves a preset from one config and reports the config_version of the
+// next.
 type Snapshot struct {
 	*Config
 	Location *time.Location
@@ -56,9 +57,9 @@ func (l *Live) Load() *Snapshot { return l.current.Load() }
 // questions of §5.5. The full hash covers every resolved value, and decides
 // only what is logged. The client hash covers exactly what /api/config
 // returns, and decides whether config_version moves. One hash cannot do
-// both. The client projection is blind to every edit that changes what a
-// chip does. And if every load bumps the counter, a HUP sent twice reloads
-// every open page.
+// both. The client view does not contain the fields that decide what a chip
+// does, so its hash does not change for an edit to them. And if every load
+// bumps the counter, a HUP sent twice reloads every open page.
 func (l *Live) Reload(log *slog.Logger) {
 	l.reloading.Lock()
 	defer l.reloading.Unlock()

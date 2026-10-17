@@ -6,9 +6,9 @@ import (
 	"strings"
 )
 
-// MarkedRow is phase 1's hand-off. The tick fans out exactly what it just
-// marked and never re-queries, so the message text must come out of this
-// SELECT (§7.3).
+// MarkedRow is what phase 1 hands to the later phases. The tick fans out
+// exactly what it just marked and never re-queries, so the message text must
+// come out of this SELECT (§7.3).
 type MarkedRow struct {
 	ID            int64
 	Text          string
@@ -20,13 +20,13 @@ type MarkedRow struct {
 	channelsAsRead *string
 }
 
-// SweepMark is §7.3 phase 1, in one transaction, with writes only. It
-// selects up to 50 due unmarked rows and stamps notified_at = now on all of
-// them. It also stamps pushed_at = now on the rows past the too-late gate:
-// rows due more than tooLateAfter seconds ago (the notify package owns that
-// policy number). It returns the eligible rows for the later phases, and the
-// gated ids for the INFO line. Gate-stamped rows are not eligible: the gate
-// means no output at all.
+// SweepMark is §7.3 phase 1: one transaction, database writes only, no
+// network. It selects up to 50 due unmarked rows and stamps
+// notified_at = now on all of them. It also stamps pushed_at = now on the
+// rows past the too-late gate: rows due more than tooLateAfter seconds ago
+// (the notify package owns that policy number). It returns the eligible rows
+// for the later phases, and the gated ids for the INFO line. Gate-stamped
+// rows are not eligible: the gate means no output at all.
 func (s *Store) SweepMark(ctx context.Context, now, tooLateAfter int64) (eligible []MarkedRow, tooLate []int64, err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -85,10 +85,11 @@ func (s *Store) SweepMark(ctx context.Context, now, tooLateAfter int64) (eligibl
 }
 
 // heldPredicate is the one definition of "held": a row the sweep has
-// handled that no push has carried yet. Phase 2's selection, its
-// predicate-not-id-list UPDATE, and §10.4's held-rows count must agree by
-// construction. If the count reports a different set than the digest
-// collects, it misreports in exactly the silence that it exists to explain.
+// handled that no push has carried yet. Phase 2's SELECT, its UPDATE (which
+// uses this predicate, not a list of ids), and §10.4's held-rows count must
+// agree by construction. If the count reports a different set than the
+// digest collects, the count is wrong in exactly the silent period that it
+// exists to explain.
 const heldPredicate = "done_at IS NULL AND notified_at IS NOT NULL AND pushed_at IS NULL"
 
 // HeldRow is one digest candidate: a row the sweep has handled that no
@@ -103,9 +104,9 @@ type HeldRow struct {
 // (done_at IS NULL AND notified_at IS NOT NULL AND pushed_at IS NULL, in due
 // order), stamps pushed_at = now on all of it, and splits it by age.
 // sendable is what the digest can still notify about. tooLate names the rows
-// that it cannot notify about. Both halves are stamped, and that is the
-// point: a row that leaves the held set must never be selectable again at a
-// greater age later. The notify package owns the policy number that divides
+// that it cannot notify about. Both halves are stamped on purpose: a row
+// that leaves the held set must never be selectable again at a greater age
+// later. The notify package owns the policy number that divides
 // them.
 //
 // The UPDATE repeats the SELECT's predicate instead of a list of ids. There
@@ -153,9 +154,9 @@ func (s *Store) SweepCollectDigest(ctx context.Context, now, maxLateness int64) 
 	return sendable, tooLate, tx.Commit()
 }
 
-// HeldCount counts the rows that wait out the cooldown, for the §10.4
-// held-rows line. That line tells a 20-minute silence apart from a broken
-// sweep.
+// HeldCount counts the rows that wait for the end of the cooldown, for the
+// §10.4 held-rows line. That line tells a 20-minute silence apart from a
+// broken sweep.
 func (s *Store) HeldCount(ctx context.Context) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx,
@@ -180,13 +181,13 @@ func stampByID(ctx context.Context, tx *sql.Tx, column string, now int64, ids []
 
 // SetDeliveryError writes one row's fan-out verdict as soon as its attempts
 // finish (§7.2). The verdict is the classified string, or nil to clear it
-// after a fully successful fan-out. It only lands on the row as phase 1
-// marked it. A re-time since then, or an edit to the channel list since
-// then, cleared delivery_error in that write (§4.1). This tick's verdict can
-// name channels that the row no longer carries, so it must not resurrect
-// delivery_error. The due_at check catches the re-time that notified_at
-// alone cannot catch: a re-time into the past in the same second, which
-// stamps notified_at with that same now.
+// after a fully successful fan-out. The write applies only if the row is
+// still as phase 1 marked it. A re-time since then, or an edit to the
+// channel list since then, cleared delivery_error in that write (§4.1). This
+// tick's verdict can name channels that the row no longer carries, so the
+// verdict must not write delivery_error again. The due_at check catches the
+// re-time that notified_at alone cannot catch: a re-time into the past in
+// the same second, which stamps notified_at with that same now.
 func (s *Store) SetDeliveryError(ctx context.Context, row MarkedRow, markedAt int64, value *string) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE reminders SET delivery_error = ?
@@ -196,8 +197,8 @@ func (s *Store) SetDeliveryError(ctx context.Context, row MarkedRow, markedAt in
 }
 
 // Purge is §4.4: delete the cleared rows whose done_at is older than
-// cutoff, and return how many went. Rows that are still in a list are never
-// touched: done_at IS NULL is not "older than" anything.
+// cutoff, and return how many it deleted. Rows that are still in a list are
+// never touched: done_at IS NULL is not "older than" anything.
 func (s *Store) Purge(ctx context.Context, cutoff int64) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
 		"DELETE FROM reminders WHERE done_at IS NOT NULL AND done_at < ?", cutoff)

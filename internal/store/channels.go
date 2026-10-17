@@ -37,10 +37,10 @@ func (s *Store) AddChannel(ctx context.Context, name, url string) error {
 	return err
 }
 
-// IsBusy reports a database that is still locked after busy_timeout gave
-// up. The cause is the serving container, which holds the write lock while
-// `nag channel` runs against the same file (§4.3, §7.4). The primary code is
-// the low byte.
+// IsBusy reports whether err means that the database stayed locked until
+// busy_timeout ran out. The cause is the serving container, which holds the
+// write lock while `nag channel` runs against the same file (§4.3, §7.4).
+// The primary result code is the low byte of the extended code.
 func IsBusy(err error) bool {
 	var e *sqlite.Error
 	return errors.As(err, &e) && e.Code()&0xff == sqlite3.SQLITE_BUSY
@@ -86,9 +86,9 @@ func (s *Store) ChannelReferences(ctx context.Context, name string) (int, error)
 	return n, err
 }
 
-// RemoveChannel deletes the row. Reminders that still name it become
-// orphans, which is defined behavior (§4.1): skipped at send time, kept on
-// the row.
+// RemoveChannel deletes the channel row. Reminders that still name the
+// channel become orphans, which is defined behavior (§4.1): the name is
+// skipped at send time and kept on the reminder.
 func (s *Store) RemoveChannel(ctx context.Context, name string) error {
 	return s.affectOne(ctx, "DELETE FROM channels WHERE name = ?", name)
 }

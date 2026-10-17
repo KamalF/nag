@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-// §10.1's host rules: keep the port; a listen-on-everything host dials
-// 127.0.0.1; an explicit host is used as given.
+// §10.1's host rules: the URL keeps the port, a listen-on-everything host
+// dials 127.0.0.1, and an explicit host is used as given.
 func TestHealthcheckURL(t *testing.T) {
 	for addr, want := range map[string]string{
 		":8080":          "http://127.0.0.1:8080/healthz",

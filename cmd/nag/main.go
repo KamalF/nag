@@ -3,7 +3,8 @@
 // No subcommand has command-line flags. Everything that varies is an
 // environment variable (§5.1) or a TOML key (§5.3). The default subcommand
 // is set in the Dockerfile's CMD ["serve"] (§10) and nowhere else. Here, a
-// missing argument is the unknown-word case, never a default.
+// missing subcommand gets the same answer as an unknown subcommand. It never
+// selects a default.
 package main
 
 import (
@@ -68,9 +69,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 }
 
 // runConfigCheck validates NAG_CONFIG through the same code path as boot.
-// It prints the resolved preset list in file order, or the located error
-// (§5.5). It never writes the default file: here an absent config is an
-// error, not something to fix silently.
+// It prints the resolved preset list in file order, or the error with its
+// location in the file (§5.5). It never writes the default file: here an
+// absent config is an error, not something to fix silently.
 func runConfigCheck(stdout, stderr io.Writer) int {
 	cfg, err := config.Check(envOr("NAG_CONFIG", defaultConfig))
 	if err != nil {

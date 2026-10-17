@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// mustGet reads the pre-image that UpdateReminder takes: the row as the
-// caller just read it.
+// mustGet reads the row that UpdateReminder takes as current: the row as
+// the caller just read it.
 func mustGet(t *testing.T, s *Store, id int64) Reminder {
 	t.Helper()
 	r, err := s.GetReminder(t.Context(), id)

@@ -41,11 +41,13 @@ func runServe(stderr io.Writer) int {
 		return 1
 	}
 
-	// the one published config: handlers and the sweep each load a snapshot
-	// once per request or tick, and SIGHUP replaces it (§5.5)
+	// live holds the one published config. Handlers and the sweep each load
+	// a snapshot of it once per request or tick. SIGHUP replaces the
+	// published config (§5.5)
 	live := config.NewLive(env.config, cfg, env.vapidPublic)
 	// one sender, two callers: the sweep's digest and POST /api/push/test
-	// (§7.5), so there is no second copy of the §7.1 ladder to drift
+	// (§7.5). So the §7.1 ladder exists in one copy only, and no second
+	// copy can drift away from it
 	sender := notify.NewPushSender(st, logger, env.vapidPublic, env.vapidPrivate, env.vapidSubject)
 	api := httpapi.New(httpapi.Options{
 		Store:  st,
@@ -75,8 +77,9 @@ func runServe(stderr io.Writer) int {
 			"count", n)
 	}
 
-	// registered before the server starts: an unhandled SIGHUP terminates
-	// the process. A SIGTERM that arrives before shutdown is wired does too
+	// the handlers are registered before the server starts, because an
+	// unhandled SIGHUP terminates the process. A SIGTERM that arrives before
+	// its handler is registered also terminates the process
 	hup := make(chan os.Signal, 1)
 	signal.Notify(hup, syscall.SIGHUP)
 	go reloadOnHangup(hup, live, logger)
@@ -100,18 +103,18 @@ func runServe(stderr io.Writer) int {
 	return 0
 }
 
-// shutdownTimeout bounds http.Server.Shutdown (§10.1), well inside Docker's
-// 10-second stop grace.
+// shutdownTimeout bounds http.Server.Shutdown (§10.1). It is well below the
+// 10-second grace period of Docker for a stop.
 const shutdownTimeout = 5 * time.Second
 
 // serveUntil runs the server and the sweep until stop is canceled. The
-// binary is PID 1 and gets no default signal handling (§10.1). Then
-// serveUntil shuts down in the one safe order. First, the server stops
-// taking requests. Next, serveUntil cancels the sweep's context and waits
-// for the sweep. Only then does it close the database. As a result, the WAL
-// checkpoint never runs under a tick that still writes delivery_error or
-// deletes a subscription. The wait is short because every send in the sweep
-// is a child of its context.
+// binary is PID 1 and gets no default signal handling (§10.1). When stop
+// is canceled, serveUntil shuts down in the one safe order. First, the
+// server stops taking requests. Next, serveUntil cancels the sweep's context
+// and waits for the sweep. Only then does it close the database. As a
+// result, the WAL checkpoint never runs during a tick that still writes
+// delivery_error or deletes a subscription. The wait is short because every
+// send in the sweep uses a child of the sweep's context.
 func serveUntil(stop context.Context, server *http.Server, sweep func(context.Context), closeDB func() error) error {
 	sweepCtx, cancelSweep := context.WithCancel(context.Background())
 	sweepDone := make(chan struct{})
@@ -130,10 +133,10 @@ func serveUntil(stop context.Context, server *http.Server, sweep func(context.Co
 		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
 		if err := server.Shutdown(ctx); err != nil {
-			// a handler outlived the grace: POST /api/push/test can run 12 s
-			// (§7.5). Close ends the connections and so its request context,
-			// and its sends stop. This is an ordinary stop, not a failure to
-			// report.
+			// a handler ran longer than shutdownTimeout: POST /api/push/test
+			// can run 12 s (§7.5). Close ends the connections, and with them
+			// the request context of that handler, so its sends stop. This is
+			// an ordinary stop, not a failure to report.
 			server.Close()
 		}
 	}
@@ -146,8 +149,8 @@ func serveUntil(stop context.Context, server *http.Server, sweep func(context.Co
 }
 
 // reloadOnHangup is the reload path: `docker compose kill -s HUP nag` (§5.5).
-// The outcome is only in the log. A `nag config check` before the HUP makes
-// sure that a bad edit costs nothing.
+// The result of a reload shows only in the log. A `nag config check` before
+// the HUP makes sure that a bad edit costs nothing.
 func reloadOnHangup(hup <-chan os.Signal, live *config.Live, logger *slog.Logger) {
 	for range hup {
 		live.Reload(logger)

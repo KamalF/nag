@@ -109,8 +109,8 @@ func TestChannelAddRefusalHidesTheURL(t *testing.T) {
 			t.Errorf("refusal does not name the parse error: %q", stderr)
 		}
 	}
-	// a fixed host that is the service's own name is not a secret. If the
-	// mask removes it, the message no longer names the service
+	// a fixed host that is the service's own name is not a secret. If
+	// redactURL removes it, the message no longer names the service
 	cli := newChannelCLI(t)
 	_, _, stderr := cli.run("add", "x", "telegram://tok_SECRET@telegram")
 	if !strings.Contains(stderr, "telegram: invalid telegram token") {
@@ -141,7 +141,7 @@ func TestMaskChannelURL(t *testing.T) {
 	for in, want := range map[string]string{
 		ntfyURL:                                 "ntfy://…",   // secret in the userinfo
 		"gotify://gotify.example.com/AbCdToken": "gotify://…", // in the path
-		"pushbullet://o.AbCdEfGhIjKlMnOpQrStUvWxYz012345/device": "pushbullet://…", // in the host, dot and all
+		"pushbullet://o.AbCdEfGhIjKlMnOpQrStUvWxYz012345/device": "pushbullet://…", // in the host, dot included
 	} {
 		if got := maskChannelURL(in); got != want {
 			t.Errorf("mask(%q) = %q, want %q", in, got, want)
@@ -169,7 +169,8 @@ func TestChannelListMasksAndShowsState(t *testing.T) {
 	}
 }
 
-// §7.4: rm prints how many reminders still name the channel, then proceeds.
+// §7.4: rm prints how many reminders still name the channel, and removes
+// the channel anyway.
 func TestChannelRemoveWarnsAndProceeds(t *testing.T) {
 	cli := newChannelCLI(t)
 	cli.run("add", "ntfy", ntfyURL)

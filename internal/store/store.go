@@ -11,8 +11,9 @@ import (
 )
 
 // migrations is the ordered list of schema versions (§4.2). PRAGMA
-// user_version counts how many have run. Append only: an edit to a shipped
-// entry changes DDL that existing databases never re-run.
+// user_version counts how many have run. The list is append-only: existing
+// databases never re-run a shipped entry, so an edit to that entry never
+// reaches them.
 var migrations = []string{
 	// 1 — initial schema (§4)
 	`
@@ -48,7 +49,8 @@ CREATE TABLE channels (
 }
 
 // Store is the process's single handle on the database. Every subcommand
-// that touches NAG_DB goes through Open, so first touch always migrates.
+// that touches NAG_DB goes through Open, so the first subcommand that opens
+// the database always migrates it.
 type Store struct {
 	db *sql.DB
 }

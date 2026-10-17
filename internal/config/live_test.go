@@ -104,8 +104,8 @@ func TestReloadLabelRenameMovesTheCounter(t *testing.T) {
 	}
 }
 
-// A byte-identical file moves nothing and logs "config unchanged". The
-// workflow "config check, then HUP" signals twice.
+// A byte-identical file moves nothing and logs "config unchanged". This
+// case is common: a second HUP after one edit reloads an unchanged file.
 func TestReloadIdenticalFileChangesNothing(t *testing.T) {
 	f := newLive(t)
 	f.reloadWith(liveTOML)

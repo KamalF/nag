@@ -29,8 +29,8 @@ func (s *Store) DeleteSubscription(ctx context.Context, endpoint string) error {
 	return err
 }
 
-// SubscriptionCount backs /api/state's instance-wide push_subscribed
-// (§8.2) and the §10.4 boot line.
+// SubscriptionCount gives the count for the instance-wide push_subscribed
+// of /api/state (§8.2) and for the §10.4 boot line.
 func (s *Store) SubscriptionCount(ctx context.Context) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM push_subscriptions").Scan(&n)
@@ -68,8 +68,8 @@ func (s *Store) ListSubscriptions(ctx context.Context) ([]Subscription, error) {
 }
 
 // MismatchedKeyCount counts subscriptions bound to a key other than the
-// configured one. It backs the §7.1 boot WARNING, which turns three weeks
-// of silent failures into a startup line.
+// configured one. The §7.1 boot WARNING uses this count, so the operator
+// sees a startup line, not three weeks of silent failures.
 func (s *Store) MismatchedKeyCount(ctx context.Context, configuredKey string) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx,

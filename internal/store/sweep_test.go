@@ -114,8 +114,9 @@ func TestSweepMarkSkipsDoneRows(t *testing.T) {
 }
 
 // Phase 2 selects the held set in due order and stamps exactly that set.
-// The predicate-not-id-list UPDATE must not reach a done row or an unmarked
-// one. It must reach every held row, however many there are (§7.3).
+// The UPDATE, which uses the predicate and not a list of ids, must not reach
+// a done row or an unmarked one. It must reach every held row, however many
+// there are (§7.3).
 func TestSweepCollectDigestStampsExactlyTheHeldSet(t *testing.T) {
 	s := newStore(t)
 	late := insertRow(t, s, 2000, ptr(int64(2100)), nil, nil)
@@ -146,7 +147,7 @@ func TestSweepCollectDigestStampsExactlyTheHeldSet(t *testing.T) {
 		}
 	}
 
-	// the rows have left the held set for good
+	// the rows have left the held set permanently
 	again, _, err := s.SweepCollectDigest(t.Context(), 4000, 3600)
 	if err != nil || len(again) != 0 {
 		t.Errorf("second collect returned %d rows (err %v), want none", len(again), err)

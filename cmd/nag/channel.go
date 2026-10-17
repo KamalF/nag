@@ -18,8 +18,9 @@ import (
 // slugPattern is the channel name rule of §7.4. The name is a JSON array
 // element in extra_channels, a chip label and a CLI argument. SQLite's UNIQUE
 // on TEXT is case-sensitive. Without this rule, "ntfy" and "NTFY" are two rows
-// that show two identical chips. A rule that accepts only lowercase at input
-// is one rule. COLLATE NOCASE also needs a matching fold at every send.
+// and two chips for what looks like one channel. A rule that accepts only lowercase at input
+// is one rule in one place. The alternative, COLLATE NOCASE, also needs a
+// matching case fold at every send.
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
 
 const channelUsage = `usage: nag channel add <name> <shoutrrr-url>
@@ -124,9 +125,9 @@ func channelList(ctx context.Context, st *store.Store, stdout io.Writer) error {
 }
 
 // channelRemove warns and then removes the channel. There is no --force,
-// because there are no flags (§3). A prompt is dead weight in a compose run,
-// which is not always a TTY. Reminders that still name the channel become
-// orphans, and orphans are defined behavior (§4.1).
+// because there are no flags (§3). A confirmation prompt is of no use in a
+// compose run, which is not always a TTY. Reminders that still name the
+// channel become orphans, and orphans are defined behavior (§4.1).
 func channelRemove(ctx context.Context, st *store.Store, name string, stdout io.Writer) error {
 	refs, err := st.ChannelReferences(ctx, name)
 	if err != nil {
@@ -187,11 +188,12 @@ var errTestFailed = errors.New("the test send failed")
 
 // channelTest is the fan-out counterpart of POST /api/push/test. It answers
 // "did that work" at the moment you paste a URL, not when a reminder fires.
-// It also sends to a disabled channel, and says so: the question is the URL,
-// not the mute. It uses the sweep's 10-second wrapper and classification. As
-// a result, the word that it prints for a dead host is the word that a
-// delivery_error holds for the same failure. Nothing here holds a
-// WriteTimeout open, so this command uses no shorter budget (§7.4).
+// It also sends to a disabled channel, and says so: the question is about
+// the URL, not about the mute switch. It uses the sweep's 10-second wrapper
+// and classification. As a result, the word that it prints for a dead host
+// is the word that a delivery_error holds for the same failure. No HTTP
+// WriteTimeout applies to this command, so it needs no shorter time budget
+// (§7.4).
 func channelTest(ctx context.Context, st *store.Store, name string, stdout io.Writer) error {
 	c, err := st.ChannelByName(ctx, name)
 	if errors.Is(err, store.ErrNoSuchChannel) {

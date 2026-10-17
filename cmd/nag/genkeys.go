@@ -10,8 +10,8 @@ import (
 )
 
 // placeholderSubject is the literal subject that genkeys writes. Boot
-// rejects it (§5.1), so to replace it is the one required hand edit of the
-// setup.
+// rejects it (§5.1), so its replacement is the one required hand edit of
+// the setup.
 const placeholderSubject = "mailto:you@example.com"
 
 // runGenkeys writes a complete, pipeable env file to stdout and nothing

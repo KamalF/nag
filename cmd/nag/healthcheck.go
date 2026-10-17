@@ -39,7 +39,7 @@ func runHealthcheck(stderr io.Writer) int {
 // healthcheckURL derives the URL from NAG_ADDR. It keeps the port. If the
 // host is empty, 0.0.0.0 or ::, it dials 127.0.0.1, because a
 // listen-on-everything address is not an address to dial. Otherwise it uses
-// the host as given. This needs no second env var, and stays correct if
+// the host as given. This rule needs no second env var, and stays correct if
 // NAG_ADDR is later narrowed to one interface.
 func healthcheckURL(addr string) (string, error) {
 	host, port, err := net.SplitHostPort(addr)

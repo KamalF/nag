@@ -64,9 +64,10 @@ func loadServeEnv() (serveEnv, error) {
 	return e, checkSubject(e.vapidSubject)
 }
 
-// checkToken enforces the 20-character floor. NAG_TOKEN is the bearer
+// checkToken enforces the 20-character minimum. NAG_TOKEN is the bearer
 // credential, and also the only input to the cookie signing key (§8.1). A
-// six-character token is a six-character MAC key that fails silently.
+// six-character token gives a weak signing key, and nothing else warns
+// about it.
 func checkToken(token string) error {
 	if token == "" {
 		return fmt.Errorf("NAG_TOKEN is not set (expected the bearer token, minimum 20 characters).\n%s", genkeysFix)
@@ -85,9 +86,10 @@ func checkVAPIDKey(name, value string, wantBytes int) error {
 		return fmt.Errorf("%s is not set (expected unpadded base64url decoding to %d bytes).\n%s",
 			name, wantBytes, genkeysFix)
 	}
-	// Go's base64 decoder ignores \r and \n. A trailing \r from a
-	// TTY-corrupted `genkeys` append (§5.2) is exactly the paste that this
-	// check must catch, so reject it before decoding.
+	// Go's base64 decoder ignores \r and \n. If a TTY corrupts the `genkeys`
+	// output that is appended to nag.env (§5.2), each value ends with \r.
+	// This check must catch exactly that value, so it rejects \r and \n
+	// before it decodes.
 	if strings.ContainsAny(value, "\r\n") {
 		return fmt.Errorf("%s contains a carriage return or newline — expected one line of unpadded base64url (%d decoded bytes)",
 			name, wantBytes)
@@ -129,8 +131,8 @@ func notBase64URL(r rune) bool {
 
 // checkSubject requires an absolute mailto: or https: URL (RFC 8292). It
 // rejects the genkeys placeholder by name: push services use the subject to
-// contact the operator, and a placeholder that boots is a placeholder that
-// ships.
+// contact the operator. If boot accepts the placeholder, the placeholder
+// stays in the deployed env file.
 func checkSubject(subject string) error {
 	if subject == "" {
 		return fmt.Errorf("NAG_VAPID_SUBJECT is not set (expected an absolute mailto: or https: URL)")

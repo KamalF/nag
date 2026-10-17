@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// Weekdays is the closed name set for preset `weekday` fields and
+// Weekdays is the fixed set of names for preset `weekday` fields and
 // `[picker].week_start` (§5.4, §5.3).
 var Weekdays = map[string]time.Weekday{
 	"monday":    time.Monday,
@@ -20,7 +20,8 @@ var Weekdays = map[string]time.Weekday{
 // validate applies the §5.5 rule list and the §5.4 per-kind field matrix.
 // It returns the first violation that it finds. The message names the
 // offending preset key (or [section].field) and the rejected value. The file
-// is hand-edited under SIGHUP, so a located error is the whole point (§5.5).
+// is hand-edited and reloaded with SIGHUP, so each error must say where the
+// problem is (§5.5).
 func validate(cfg *Config) error {
 	if err := validateGeneral(cfg.General); err != nil {
 		return err

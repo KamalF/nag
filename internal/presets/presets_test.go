@@ -114,8 +114,8 @@ func TestOffsetAcrossMidnight(t *testing.T) {
 }
 
 func TestOffsetAcrossSpringForwardIsPureDuration(t *testing.T) {
-	// 00:30 CET + 3h of wall time lands at 04:30 CEST — the calendar never
-	// enters into an offset (§6).
+	// 00:30 CET + 3h of elapsed time gives 04:30 CEST — an offset never
+	// uses the calendar (§6).
 	now := time.Date(2026, 3, 29, 0, 30, 0, 0, paris)
 	due := evaluate(t, offsetPreset("3h"), now)
 	assertLocal(t, due, "2026-03-29 04:30 +0200")

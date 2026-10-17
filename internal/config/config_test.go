@@ -42,7 +42,7 @@ func TestLoadAbsentPathWritesDefault(t *testing.T) {
 }
 
 // Presence of a kind-specific field must survive decoding: §5.4 rejects a
-// field outside its kind, so nil vs set is meaning, not representation.
+// field outside its kind, so nil and a set value mean different things.
 func TestLoadKeepsFieldPresence(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nag.toml")
 	cfg, _, err := Load(path)

@@ -27,8 +27,8 @@ type Reminder struct {
 
 const reminderColumns = "id, text, due_at, notified_at, pushed_at, done_at, created_at, extra_channels, delivery_error"
 
-// backdatedStamps is §4.1's born-notified rule, shared by create and
-// re-time. A due_at that is not in the future stamps both lifecycle columns
+// backdatedStamps is §4.1's rule for a due_at in the past, shared by create
+// and re-time. A due_at that is not in the future stamps both lifecycle columns
 // to now. The row is then invisible to the sweep's phase 1, and can never
 // become a digest candidate.
 func backdatedStamps(dueAt, now int64) (notified, pushed *int64) {
@@ -39,8 +39,9 @@ func backdatedStamps(dueAt, now int64) (notified, pushed *int64) {
 }
 
 // CreateReminder inserts a reminder. If dueAt is not after now, the same
-// statement stamps notified_at = pushed_at = now (§4.1). Then a backdated
-// write appears in the overdue list immediately and never notifies.
+// statement stamps notified_at = pushed_at = now (§4.1). As a result, a
+// backdated write appears in the overdue list immediately and never
+// notifies.
 func (s *Store) CreateReminder(ctx context.Context, text string, dueAt int64, extraChannels []string, now int64) (Reminder, error) {
 	extraChannels = canonicalChannelList(extraChannels)
 	notified, pushed := backdatedStamps(dueAt, now)
@@ -113,8 +114,8 @@ func (s *Store) ListChannels(ctx context.Context) ([]Channel, error) {
 }
 
 // ReminderUpdate is one PATCH's writes. nil means "leave unchanged".
-// ExtraChannels that points at an empty slice means "clear the list":
-// presence and null are different answers in §8.3.
+// ExtraChannels that points at an empty slice means "clear the list": §8.3
+// gives different answers for an absent key and for null.
 type ReminderUpdate struct {
 	Text          *string
 	DueAt         *int64
@@ -122,12 +123,13 @@ type ReminderUpdate struct {
 }
 
 // UpdateReminder applies u to current in one UPDATE (§4.1). current is the
-// row as the caller just read it (one read, one pre-image). A DueAt is a
-// re-time: notified_at and pushed_at reset (or stamp to now on a backdated
-// value, exactly as on create), and done_at and delivery_error clear. A
-// changed ExtraChannels list also clears delivery_error. "Changed" is an
-// ordered comparison of the canonical forms. An identical list touches
-// nothing, so a re-save of a row with the same channels is not a clear.
+// row as the caller just read it, so the caller and UpdateReminder use the
+// same single read of the row. A non-nil DueAt is a re-time: notified_at and
+// pushed_at reset (or stamp to now on a backdated value, exactly as on
+// create), and done_at and delivery_error clear. A changed ExtraChannels list
+// also clears delivery_error. "Changed" is an ordered comparison of the
+// canonical forms. An identical list touches nothing, so a re-save of a row
+// with the same channels does not clear delivery_error.
 func (s *Store) UpdateReminder(ctx context.Context, current Reminder, u ReminderUpdate, now int64) (Reminder, error) {
 	var set []string
 	var args []any
@@ -162,8 +164,8 @@ func (s *Store) UpdateReminder(ctx context.Context, current Reminder, u Reminder
 
 // MarkDone stamps done_at = now and returns the row. On a row that is
 // already done, it is a successful no-op that keeps the original done_at
-// (§8.2). A re-stamp pushes the retention clock forward on every double-tap.
-// It returns sql.ErrNoRows if the id does not exist.
+// (§8.2). A second stamp moves the retention clock forward on every
+// double-tap. It returns sql.ErrNoRows if the id does not exist.
 func (s *Store) MarkDone(ctx context.Context, id, now int64) (Reminder, error) {
 	_, err := s.db.ExecContext(ctx,
 		"UPDATE reminders SET done_at = ? WHERE id = ? AND done_at IS NULL", now, id)
@@ -176,7 +178,7 @@ func (s *Store) MarkDone(ctx context.Context, id, now int64) (Reminder, error) {
 // MarkUndone clears done_at. In the same statement, it stamps
 // pushed_at = now exactly when notified_at IS NOT NULL AND pushed_at IS
 // NULL (§4.1). If a row is cleared during a cooldown, done_at drops it from
-// the held set, and a later un-clear must not walk it back into a digest. A
+// the held set, and a later un-clear must not put it back into a digest. A
 // row cleared before it ever fired keeps its NULLs, and returns as a live
 // phase-1 candidate. On a row that is not done, it is a successful no-op.
 // It returns sql.ErrNoRows if the id does not exist.
@@ -195,8 +197,8 @@ func (s *Store) MarkUndone(ctx context.Context, id, now int64) (Reminder, error)
 	return s.GetReminder(ctx, id)
 }
 
-// DeleteReminder hard-deletes the row (§8.2's curl affordance). It reports
-// whether a row existed.
+// DeleteReminder hard-deletes the row (§8.2: an endpoint for curl only). It
+// reports whether a row existed.
 func (s *Store) DeleteReminder(ctx context.Context, id int64) (bool, error) {
 	res, err := s.db.ExecContext(ctx, "DELETE FROM reminders WHERE id = ?", id)
 	if err != nil {
@@ -255,7 +257,7 @@ func canonicalChannelList(names []string) []string {
 }
 
 // encodeChannels stores an empty list as NULL: §4's column is nullable, and
-// §8.2 re-materializes [] on the way out.
+// §8.2 turns NULL back into [] in the response.
 func encodeChannels(names []string) *string {
 	if len(names) == 0 {
 		return nil
@@ -265,8 +267,8 @@ func encodeChannels(names []string) *string {
 	return &s
 }
 
-// decodeChannels is encodeChannels' twin, shared by every scanner of the
-// column.
+// decodeChannels is the inverse of encodeChannels, shared by every scanner
+// of the column.
 func decodeChannels(id int64, raw string) ([]string, error) {
 	var names []string
 	if err := json.Unmarshal([]byte(raw), &names); err != nil {

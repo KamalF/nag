@@ -27,8 +27,8 @@ func Evaluate(p config.Preset, now time.Time, loc *time.Location) (time.Time, er
 }
 
 // evaluateOffset is pure duration arithmetic on an absolute instant. It
-// never touches a calendar, so "3 hours" is three hours of wall time, even
-// across a DST transition (§6).
+// never touches a calendar, so "3 hours" is three hours of elapsed time,
+// even across a DST transition (§6).
 func evaluateOffset(p config.Preset, now time.Time) (time.Time, error) {
 	if p.Offset == nil {
 		return time.Time{}, fmt.Errorf("preset %q: no offset", p.Key)

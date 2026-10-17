@@ -177,9 +177,9 @@ func TestGenkeysNeedsNoEnvironment(t *testing.T) {
 	}
 }
 
-// §5.2: nag.env.example is comments only and declares no variables. A
-// template with NAG_TOKEN= leaves two of every key after the genkeys append,
-// and then the one hand edit has two candidate lines.
+// §5.2: nag.env.example is comments only and declares no variables. If the
+// template has a NAG_TOKEN= line, the file holds two lines for every key after
+// the genkeys append. Then the one hand edit has two candidate lines.
 func TestEnvExampleDeclaresNothing(t *testing.T) {
 	raw, err := os.ReadFile("../../nag.env.example")
 	if err != nil {
