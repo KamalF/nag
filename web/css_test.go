@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-// §9.1's token table, byte for byte, both sets. The light set is the one
-// with deliberate deviations from a straight inversion, which is exactly
-// what a hand-copied stylesheet gets wrong.
+// The token table of §9.1, byte for byte, both sets. The light set has
+// deliberate deviations from a straight inversion. That is exactly what a
+// hand-copied stylesheet gets wrong.
 func TestCSSTokensMatchTheSpecTable(t *testing.T) {
 	css := readFile(t, "app.css")
 	darkAt := strings.Index(css, "@media (prefers-color-scheme: dark)")
@@ -39,7 +39,8 @@ func TestCSSTokensMatchTheSpecTable(t *testing.T) {
 			t.Errorf("dark %s = %q, want %q", tok.name, got, tok.dark)
 		}
 	}
-	// the mockups' preview machinery must not be carried over (§9.1)
+	// nothing sets a data-theme attribute, so a rule must not be scoped to one
+	// (§9.1)
 	if strings.Contains(css, "[data-theme") {
 		t.Error("app.css scopes a rule to data-theme")
 	}
@@ -54,7 +55,7 @@ func tokenValue(block, name string) string {
 }
 
 // §9.7: style-src 'self' blocks a style="…" attribute parsed from HTML
-// exactly as it blocks a <style> block, so the markup carries neither.
+// exactly as it blocks a <style> block. So the markup carries neither.
 func TestIndexHasNoInlineStyle(t *testing.T) {
 	html := readFile(t, "index.html")
 	if strings.Contains(html, "style=") || strings.Contains(html, "<style") {

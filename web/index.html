@@ -8,8 +8,8 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icons/32.png" sizes="32x32" type="image/png">
   <!-- --surface in each theme: the browser chrome follows the OS like the
-       page does. The manifest's single theme_color is the one place that
-       rule cannot reach (§9.3). -->
+       page does. The single theme_color of the manifest is the one place
+       that this rule cannot reach (§9.3). -->
   <meta name="theme-color" content="#EFF1F0" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#212A2E" media="(prefers-color-scheme: dark)">
 </head>
@@ -21,15 +21,15 @@
       <p id="login-error" class="login-error" role="alert"></p>
     </section>
 
-    <!-- the capture bar is built by app.js: the row editor is the same
+    <!-- app.js builds the capture bar: the row editor is the same
          component (§9.2) -->
     <section id="capture" class="capture" hidden></section>
 
-    <!-- §9.2: two consecutive poll failures; clears itself on the next
-         success -->
+    <!-- §9.2: two consecutive poll failures. It clears itself on the next
+         success. -->
     <p id="offline" class="offline" hidden></p>
 
-    <!-- §9.2: absent entirely when push is working, which is its steady
+    <!-- §9.2: absent entirely when push works, which is its steady
          state. It is above the lists because it is the one thing whose
          absence you cannot notice. -->
     <section id="notify-slot" class="slot" hidden></section>
@@ -46,15 +46,15 @@
       <ul id="later" class="rows"></ul>
     </section>
 
-    <!-- §9.2: the most-seen screen — the reward, not an error -->
+    <!-- §9.2: the most-seen screen. It is the reward, not an error. -->
     <section id="empty" class="empty" hidden>
       <p>Nothing waiting.</p>
       <span>Type above and pick when it should come back.</span>
     </section>
   </main>
 
-  <!-- §9.6: the picker sheet, outside <main> so the page behind it can be
-       made inert while it is up. Nothing is written until Set reminder. -->
+  <!-- §9.6: the picker sheet, outside <main> so that the page behind it can
+       be made inert while it is up. Nothing is written until Set reminder. -->
   <div id="scrim" class="scrim"></div>
   <div id="sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="summary">
     <div class="grab"></div>
@@ -82,8 +82,9 @@
       <button type="button" id="picker-set" class="btn-set">Set reminder</button>
     </div>
   </div>
-  <!-- one region for errors and the undo offer, so both are announced;
-       after the sheet, so CSS can move it clear of the sheet's buttons -->
+  <!-- one region for errors and the undo offer, so both are announced. It
+       comes after the sheet, so that CSS can move it clear of the buttons of
+       the sheet. -->
   <div id="toasts" class="toasts" aria-live="polite"></div>
   <script src="/app.js"></script>
 </body>

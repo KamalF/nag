@@ -1,11 +1,11 @@
-/* Nag — "Patina structure, Horizon palette" (§9.1). */
+/* Nag: "Patina structure, Horizon palette" (§9.1). */
 
 /* ============ tokens ============ */
-/* The §9.1 table: the light set on bare :root, the dark set redefining the
-   same names under prefers-color-scheme. The OS decides — there is no
-   data-theme attribute, no toggle, and nothing persisted (§9.1). The light
-   amber and quiet ink are not inversions of the dark ones: #E0A33E is ~2:1
-   on light slate and #67787E measured under the 4.5:1 floor. */
+/* The §9.1 table: the light set on bare :root, and the dark set that
+   redefines the same names under prefers-color-scheme. The OS decides: there
+   is no data-theme attribute, no toggle, and nothing persisted (§9.1). The
+   light amber and quiet ink are not inversions of the dark ones. #E0A33E is
+   ~2:1 on light slate, and #67787E measured under the 4.5:1 floor. */
 :root {
   --surface: #EFF1F0;
   --surface-lift: #F7F8F8;
@@ -21,7 +21,7 @@
   --chip-ink: #3C4A4E;
   --scrim: rgba(30,40,44,.42);
 
-  /* layout tokens, not theme (§9.1): fonts are system stacks — nothing is
+  /* layout tokens, not theme (§9.1). Fonts are system stacks: nothing is
      downloaded and nothing is embedded, so font-src is 'none' (§10.2) */
   --body: "Optima", Candara, "Gill Sans", "Gill Sans MT", sans-serif;
   --time: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
@@ -67,7 +67,7 @@ button, input { font: inherit; color: inherit; }
 [hidden] { display: none !important; }
 
 /* ============ interaction states (§9.7) ============ */
-/* The default grey tap rectangle ignores border-radius. */
+/* The default gray tap rectangle ignores border-radius. */
 button, input, a { -webkit-tap-highlight-color: transparent; }
 
 button { cursor: pointer; transition: transform .09s ease; }
@@ -101,7 +101,7 @@ button:not(:disabled):active { transform: scale(.96); }
 .login-error:empty { display: none; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 7px; }
-/* no pressed state: a chip saves on click, it is not a selection (§9.2) */
+/* no pressed state: a chip saves on click and is not a selection (§9.2) */
 .chip {
   display: inline-flex; align-items: baseline; gap: 6px;
   font: 13px/1 var(--body); padding: 8px 14px; border-radius: 999px;
@@ -133,8 +133,8 @@ button:not(:disabled):active { transform: scale(.96); }
   box-shadow: 0 8px 24px rgba(0,0,0,.25);
 }
 .toast .act.pri { border-color: var(--surface); color: var(--surface); }
-/* while the sheet is up, toasts move to the top: at the bottom they would
-   sit on Cancel and Set reminder, the two buttons a failed Set needs */
+/* while the sheet is up, toasts move to the top. At the bottom they sit on
+   Cancel and Set reminder, the two buttons that a failed Set needs. */
 .sheet.open ~ .toasts { top: calc(16px + env(safe-area-inset-top)); bottom: auto; }
 
 /* ---- notification slot ---- */
@@ -175,7 +175,7 @@ button:not(:disabled):active { transform: scale(.96); }
 .row .marker.failed { background: var(--late); box-shadow: none; }
 .delivery-error { margin: 10px 0 0; font-size: 13px; color: var(--late); overflow-wrap: anywhere; }
 
-/* upcoming recedes; only what is due carries full contrast (§9.1) */
+/* upcoming recedes. Only what is due carries full contrast (§9.1). */
 .row.later .txt { color: var(--ink-quiet); }
 .row.late .txt { color: var(--ink); }
 .row.late .when { color: var(--late); font-style: normal; font-weight: 600; }
@@ -184,14 +184,14 @@ button:not(:disabled):active { transform: scale(.96); }
   box-shadow: inset 2px 0 0 var(--late);
 }
 
-/* [label](url) renders as a real anchor; amber stays reserved for
-   lateness and never means "clickable" (§9.10) */
+/* [label](url) renders as a real anchor. Amber stays reserved for
+   lateness and never means "clickable" (§9.10). */
 .row .txt a {
   color: var(--ink); cursor: pointer;
   text-decoration: underline; text-decoration-color: var(--ink-faint); text-underline-offset: 2px;
 }
 
-/* a clicked notification's row: scrolled into view and flashed (§9.5) */
+/* the row of a clicked notification: scrolled into view and flashed (§9.5) */
 .row.pinged { animation: flash 2.4s ease-out 1; }
 @keyframes flash {
   0%, 30% { background: color-mix(in srgb, var(--late) 22%, var(--surface-lift)); }
@@ -203,17 +203,17 @@ button:not(:disabled):active { transform: scale(.96); }
   100% { background: transparent; }
 }
 
-/* the editor is the capture bar inside the row; the row's own time stays
-   beside it (§9.6), and the text and actions step aside */
+/* the editor is the capture bar inside the row. The time of the row itself
+   stays beside it (§9.6), and the text and actions step aside. */
 .row .txt, .row .when { cursor: text; }
 .row.editing { flex-wrap: wrap; }
 .row.editing .bar { flex: 0 0 100%; }
 .row.editing .bar input { margin-bottom: 10px; }
 
 /* Desktop reveals the actions on :hover and :focus-within. :focus-within is
-   not a nicety: with :hover alone, tabbing into a row reveals nothing, and
-   every action behind the reveal is focusable but invisible (§9.2). Opacity
-   rather than display, so the hidden buttons stay in the tab order. */
+   not a nicety. With :hover alone, a Tab into a row reveals nothing, and
+   every action behind the reveal is focusable but invisible (§9.2). Opacity,
+   not display, so that the hidden buttons stay in the tab order. */
 @media (hover: hover) and (min-width: 701px) {
   .row .acts { opacity: 0; transition: opacity .12s ease; }
   .row:hover .acts, .row:focus-within .acts { opacity: 1; }
@@ -225,9 +225,9 @@ button:not(:disabled):active { transform: scale(.96); }
 .empty span { font: italic 14px var(--time); color: var(--ink-quiet); }
 
 /* ============ picker sheet (§9.6) ============ */
-/* after reminder-datetime-picker.html. Closed, the sheet is translated off
-   screen and visibility:hidden — still laid out, so the wheels can be
-   positioned with scrollTop before it slides in, but unfocusable. */
+/* Closed, the sheet is translated off screen and visibility:hidden. It is
+   still laid out, so the wheels can be positioned with scrollTop before it
+   slides in, but it is unfocusable. */
 .scrim {
   position: fixed; inset: 0; z-index: 40; background: var(--scrim);
   opacity: 0; pointer-events: none; transition: opacity .22s ease;
@@ -284,8 +284,8 @@ button:not(:disabled):active { transform: scale(.96); }
   position: absolute; left: 0; right: 0; top: var(--item); height: var(--item);
   border-radius: 12px; background: var(--chip); pointer-events: none;
 }
-/* plain scroll containers: snap, one item of padding so the first and last
-   can centre, an edge fade — no drag handling, no library */
+/* plain scroll containers: snap, one item of padding so that the first and
+   last items can center, and an edge fade. No drag handling, no library. */
 .wheel {
   position: relative; flex: 0 1 108px; overflow-y: auto; scroll-snap-type: y mandatory;
   padding: var(--item) 0; scrollbar-width: none;
@@ -313,8 +313,8 @@ button:not(:disabled):active { transform: scale(.96); }
 
 /* ============ mobile (§9.9) ============ */
 /* Rows wrap: the text gets the full width, then the time bottom-left and
-   the actions bottom-right. Tap targets at least 40px; the capture input
-   stays at 16px so iOS does not zoom on focus. */
+   the actions bottom-right. Tap targets are at least 40px. The capture input
+   stays at 16px so that iOS does not zoom on focus. */
 @media (max-width: 700px) {
   :root { --pad: 18px; }
   .bar input, .login input { padding: 12px 14px; margin-bottom: 12px; font-size: 16px; }
@@ -323,8 +323,8 @@ button:not(:disabled):active { transform: scale(.96); }
   .row { flex-wrap: wrap; gap: 7px 12px; padding: 12px 2px; }
   .row .txt { flex: 0 0 100%; font-size: 16px; line-height: 1.35; }
   .row .when { font-size: 14px; }
-  /* may shrink to the row's width, so an overdue row's five actions wrap
-     onto a second line instead of running off the screen */
+  /* can shrink to the width of the row, so the five actions of an overdue
+     row wrap onto a second line and do not run off the screen */
   .row .acts { margin-left: auto; gap: 8px; flex: 0 1 auto; min-width: 0; }
   .act { padding: 9px 14px; font-size: 12px; min-height: 40px; }
   .channels-toggle { min-height: 40px; }
@@ -336,6 +336,6 @@ button:not(:disabled):active { transform: scale(.96); }
 
 @media (prefers-reduced-motion: reduce) {
   .row .acts { transition: none; }
-  /* still highlighted for its 2.4 s, just without the fade */
+  /* still highlighted for its 2.4 s, but without the fade */
   .row.pinged { animation: none; background: color-mix(in srgb, var(--late) 22%, var(--surface-lift)); }
 }

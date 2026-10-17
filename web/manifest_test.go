@@ -7,9 +7,9 @@ import (
 	"testing"
 )
 
-// §9.3 pins the manifest's minimum content, and every value in it is one an
-// install reads once and never revisits: a wrong `scope` or `display` is a
-// browser tab pretending to be an app, on a phone, three weeks later.
+// §9.3 pins the minimum content of the manifest. An install reads every value
+// in it once and never reads it again. A wrong `scope` or `display` gives a
+// browser tab that pretends to be an app, on a phone, three weeks later.
 func TestManifestPinnedValues(t *testing.T) {
 	raw, err := Files.ReadFile("manifest.webmanifest")
 	if err != nil {
@@ -42,8 +42,8 @@ func TestManifestPinnedValues(t *testing.T) {
 		{"scope", m.Scope, "/"},
 		{"display", m.Display, "standalone"},
 		// theme_color can only hold one value, so it takes the dark
-		// --surface — the single place the OS-follows-theme rule of §9.1
-		// does not reach
+		// --surface. This is the single place that the OS-follows-theme rule
+		// of §9.1 does not reach.
 		{"background_color", m.BackgroundColor, "#212A2E"},
 		{"theme_color", m.ThemeColor, "#212A2E"},
 	} {
@@ -77,10 +77,10 @@ func TestManifestPinnedValues(t *testing.T) {
 	}
 }
 
-// The four PNGs are named by the manifest, by the service worker's icon and
-// badge slots, and by the canvas favicon (§9.3) — all by literal path and
-// size. A file that is missing, or right in name and wrong in pixels, fails
-// at whichever of those three it reaches first.
+// The manifest, the icon and badge slots of the service worker, and the
+// canvas favicon name the four PNGs (§9.3), all by literal path and size. A
+// file that is missing, or right in name and wrong in pixels, fails at
+// whichever of those three it reaches first.
 func TestIconsAreEmbeddedAtTheirNamedSizes(t *testing.T) {
 	for name, want := range map[string]int{
 		"icons/32.png":           32,
@@ -107,16 +107,16 @@ func TestIconsAreEmbeddedAtTheirNamedSizes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// §9.3: exactly four, and the directory is embedded whole — a stray
-	// file here ships in the binary
+	// §9.3: exactly four. The directory is embedded whole, so a stray file
+	// here ships in the binary.
 	if len(entries) != 4 {
 		t.Errorf("icons/ holds %d files, want exactly 4", len(entries))
 	}
 }
 
 // §9.5: worker scope is path-based, so sw.js must sit at the root of the
-// embedded tree — a nested worker cannot control the page, and the failure
-// is silent registration under a scope that never sees a navigation.
+// embedded tree. A nested worker cannot control the page. The failure is a
+// silent registration under a scope that never sees a navigation.
 func TestServiceWorkerIsEmbeddedAtTheRoot(t *testing.T) {
 	if _, err := Files.ReadFile("sw.js"); err != nil {
 		t.Fatal(err)

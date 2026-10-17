@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-// §9.11: the worker carries its own copy of the short formatter, since
-// sw.js cannot import from app.js, and thresholds and units are exactly
-// what drifts silently between two copies. Each shared function must be
+// §9.11: the worker carries its own copy of the short formatter, because
+// sw.js cannot import from app.js. Thresholds and units are exactly what
+// drifts silently between two copies. Each shared function must be
 // byte-identical in both files.
 func TestWorkerFormatterMatchesThePage(t *testing.T) {
 	page := readFile(t, "app.js")
